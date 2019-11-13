@@ -14,11 +14,11 @@
 	    }
 	],
     "support": {
-        "email": "rlk002@gmail.com",
+        "email": "rlk002@gmail.com"
     },
     "require": {
         "php": "^5.4 || ^7.0",
-        "leeoniya/dump-r": "^2.1",
+        "leeoniya/dump-r": "^2.1"
     },
     "autoload":{
     	"files": ["src/functions_helper.php"]
