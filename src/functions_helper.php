@@ -8,8 +8,50 @@
  * @Synopsis:  函数库
  * @Version:  1.0
  * @Last Modified by:   assad
- * @Last Modified time: 2019-11-13 14:38:11
+ * @Last Modified time: 2020-02-11 16:31:01
  */
+
+/**
+ * belongsto functions_helper.php
+ * 得到当前页面的基础URL
+ *
+ * @param      boolean  $atRoot  The at root
+ * @param      boolean  $atCore  The at core
+ * @param      <type>   $parse   The parse
+ *
+ * @return     string   ( description_of_the_return_value )
+ *
+ * @author     assad
+ * @since      2020-02-11T16:30
+ */
+function baseUrl($atRoot = FALSE, $atCore = FALSE, $parse = FALSE) {
+	if (isset($_SERVER['HTTP_HOST'])) {
+		$http = isset($_SERVER['HTTPS']) && strtolower($_SERVER['HTTPS']) !== 'off' ? 'https' : 'http';
+		$hostname = $_SERVER['HTTP_HOST'];
+		$dir = str_replace(basename($_SERVER['SCRIPT_NAME']), '', $_SERVER['SCRIPT_NAME']);
+
+		$core = preg_split('@/@', str_replace($_SERVER['DOCUMENT_ROOT'], '', realpath(dirname(__FILE__))), NULL, PREG_SPLIT_NO_EMPTY);
+		$core = $core[0];
+
+		$tmplt = $atRoot ? ($atCore ? "%s://%s/%s/" : "%s://%s/") : ($atCore ? "%s://%s/%s/" : "%s://%s%s");
+		$end = $atRoot ? ($atCore ? $core : $hostname) : ($atCore ? $core : $dir);
+		$base_url = sprintf($tmplt, $http, $hostname, $end);
+	} else {
+		$base_url = 'http://localhost/';
+	}
+
+	if ($parse) {
+		$base_url = parse_url($base_url);
+		if (isset($base_url['path'])) {
+			if ($base_url['path'] == '/') {
+				$base_url['path'] = '';
+			}
+		}
+
+	}
+
+	return $base_url;
+}
 
 /**
  * 截取字符串函数
@@ -677,7 +719,7 @@ function getResponseData($data = [], $tip = 'success', $code = 0) {
  */
 function jump($uri = '', $method = 'auto', $code = NULL) {
 	if (!filter_var($uri, FILTER_VALIDATE_URL)) {
-		$url = base_url();
+		$url = baseUrl();
 		if ($uri != '/') {
 			$uri = $url . '/' . $uri;
 		}
