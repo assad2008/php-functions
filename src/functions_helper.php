@@ -8,7 +8,7 @@
  * @Synopsis:  函数库
  * @Version:  1.0
  * @Last Modified by:   assad
- * @Last Modified time: 2020-07-08 12:24:13
+ * @Last Modified time: 2020-07-08 12:44:26
  */
 
 /**
@@ -306,10 +306,20 @@ function downloadFile($file, $fileName = "") {
  * @return     flaot
  */
 function executeTime($sec = false) {
-    if (!defined(SYS_START_TIME)) {
-        return 0;
+    $startTime = null;
+    if (defined(SYS_START_TIME)) {
+        $startTime = SYS_START_TIME;
     }
-    $stime = explode(' ', SYS_START_TIME);
+    if (!$startTime) {
+        $startTime = @\Yaf\Registry::get("starttime");
+    }
+    if (!$startTime) {
+        $startTime = @\Zend_Registry::get('starttime');
+    }
+    if (!$startTime) {
+        return false;
+    }
+    $stime = explode(' ', $startTime);
     $etime = explode(' ', microtime());
     $exeTime = number_format(($etime[1] + $etime[0] - $stime[1] - $stime[0]), 6);
     if ($sec) {
