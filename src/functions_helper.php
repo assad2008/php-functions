@@ -8,7 +8,7 @@
  * @Synopsis:  函数库
  * @Version:  1.0
  * @Last Modified by:   assad
- * @Last Modified time: 2020-07-08 12:44:26
+ * @Last Modified time: 2020-07-16 00:38:33
  */
 
 /**
@@ -311,10 +311,15 @@ function executeTime($sec = false) {
         $startTime = SYS_START_TIME;
     }
     if (!$startTime) {
-        $startTime = @\Yaf\Registry::get("starttime");
-    }
-    if (!$startTime) {
-        $startTime = @\Zend_Registry::get('starttime');
+        if (class_exists('\Yaf\Registry')) {
+            $startTime = \Yaf\Registry::get("starttime") ?: 0;
+        }
+        if (class_exists('Yaf_Registry')) {
+            $startTime = \Yaf_Registry::get("starttime") ?: 0;
+        }
+        if (class_exists('Zend_Registry')) {
+            $startTime = \Zend_Registry::isRegistered('starttime') ? \Zend_Registry::get('starttime') : 0;
+        }
     }
     if (!$startTime) {
         return false;
