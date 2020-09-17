@@ -8,7 +8,7 @@
  * @Synopsis:  函数库
  * @Version:  1.0
  * @Last Modified by:   assad
- * @Last Modified time: 2020-07-16 00:38:33
+ * @Last Modified time: 2020-09-17 21:54:03
  */
 
 /**
@@ -856,6 +856,32 @@ function ip() {
         $ip = $_SERVER['REMOTE_ADDR'];
     }
     return preg_match('/[\d\.]{7,15}/', $ip, $matches) ? $matches[0] : '';
+}
+
+/**
+ * 检查IP是否在白名单之内
+ *
+ * @param      string  $ip         { parameter_description }
+ * @param      array   $whitelist  The whitelist
+ *
+ * @return     bool    True if allowed ip, False otherwise.
+ */
+function isAllowedIp($ip, array $whitelist) {
+    $ip = (string) $ip;
+    if (in_array($ip, $whitelist, true)) {
+        return true;
+    }
+    foreach ($whitelist as $whitelistedIp) {
+        $whitelistedIp = (string) $whitelistedIp;
+        $wildcardPosition = strpos($whitelistedIp, "*");
+        if ($wildcardPosition === false) {
+            continue;
+        }
+        if (substr($ip, 0, $wildcardPosition) . "*" === $whitelistedIp) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /**
