@@ -8,7 +8,7 @@
  * @Synopsis:  函数库
  * @Version:  1.0
  * @Last Modified by:   assad
- * @Last Modified time: 2021-04-22 17:01:27
+ * @Last Modified time: 2021-04-22 17:15:15
  */
 
 /**
@@ -416,7 +416,7 @@ function getOrderId($type = 'CI', $seqId = 0, $lenth = 18) {
  * @since      2021-04-16T10:55
  */
 function genOrderId($datacenterId = 1) {
-    if (!class_exists(\Godruoyi\Snowflake\Snowflake)) {
+    if (!class_exists('\Godruoyi\Snowflake\Snowflake')) {
         throw new Exception('Snowflake不存在');
     }
     $snowflake = new \Godruoyi\Snowflake\Snowflake($datacenterId);
