@@ -8,7 +8,7 @@
  * @Synopsis:  函数库
  * @Version:  1.0
  * @Last Modified by:   assad
- * @Last Modified time: 2021-04-22 16:21:29
+ * @Last Modified time: 2021-04-22 17:01:27
  */
 
 /**
@@ -438,7 +438,7 @@ function getJsonData($data = [], $tip = 'success', $code = 0) {
     $responseData['code'] = $code;
     $responseData['msg'] = $tip;
     $responseData['data'] = $data;
-    $executeTime = executeTime();
+    $executeTime = @executeTime();
     $executeTime && $responseData['execute_time'] = (string) executeTime() . ' ms';
     $ret = jsonEncode($responseData);
     return $ret;
