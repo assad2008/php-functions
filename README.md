@@ -3,7 +3,7 @@
 PHP自用函数库
 
 | 函数名称  |      函数描述    | 参数 |
-|----------|:-------------:|--------:|
+|----------|:-------------:|:--------:|
 | baseUrl |  获得当前页面根URL |$atRoot = FALSE, $atCore = FALSE, $parse = FALSE|
 | cutStr|    截取字符串   |$string, $length, $dot = '...'|
 | countFileLines| 计算文件行数 |$filepath|
