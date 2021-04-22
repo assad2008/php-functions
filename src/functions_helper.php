@@ -8,7 +8,7 @@
  * @Synopsis:  函数库
  * @Version:  1.0
  * @Last Modified by:   assad
- * @Last Modified time: 2021-04-22 17:15:15
+ * @Last Modified time: 2021-04-22 17:33:04
  */
 
 /**
@@ -250,7 +250,7 @@ function ciGmdate($timestamp = "", $format = "Y-n-d H:i", $convert = 1) {
 }
 
 /**
- * 调试函数，会终止程序运行
+ * 打印变量，会终止程序运行
  *
  * @param      <type>   $var    调试的信息
  * @param      integer  $type   The type
@@ -1005,7 +1005,7 @@ function monthArrList($startTimeStamp, $endTimeStamp) {
 
 /**
  * belongsto functions_helper.php
- * 多为数组排序
+ * 多维数组排序
  *
  * @param      array  $multi_array  数组
  * @param      string  $sort_key     排序的KEY
