@@ -8,7 +8,7 @@
  * @Synopsis:  函数库
  * @Version:  1.0
  * @Last Modified by:   assad
- * @Last Modified time: 2020-09-17 21:54:03
+ * @Last Modified time: 2021-04-22 16:21:29
  */
 
 /**
@@ -73,7 +73,7 @@ function cutStr($string, $length, $dot = '...') {
     );
 
     $strcut = '';
-    if (is_utf8($string)) {
+    if (isUtf8($string)) {
         $length = $length - strlen($dot);
         $n = $tn = $noc = 0;
         while ($n < strlen($string)) {
@@ -152,7 +152,6 @@ function countFileLines($filepath) {
     while (fgets($fp)) {
         $line++;
     }
-
     fclose($fp);
     return $line;
 }
@@ -299,6 +298,29 @@ function downloadFile($file, $fileName = "") {
 }
 
 /**
+ * belongsto Helpers.php
+ * 得到日列表
+ *
+ * @param      string  $month   月份 如：2021-04-01
+ * @param      string  $format  The format
+ *
+ * @return     array   ( description_of_the_return_value )
+ *
+ * @author     assad
+ * @since      2021-04-09T16:07
+ */
+function dayArrList($month, $format = 'Ymd') {
+    $time = strtotime($month . '10:10:10');
+    $j = date("t", $time);
+    $startTime = strtotime(date('Y-m-01', $time));
+    $dayArr = [];
+    for ($i = 0; $i < $j; $i++) {
+        $dayArr[] = date($format, $startTime + $i * 86400);
+    }
+    return $dayArr;
+}
+
+/**
  * 程序执行时间
  *
  * @param      boolean  $sec    false 则返回毫秒，否则返回秒
@@ -342,12 +364,11 @@ function executeTime($sec = false) {
  * @return     string  ( 文件内容)
  */
 function fileGetContents($url) {
-    $ctx = stream_context_create(
-        [
-            'http' => [
-                'timeout' => 3, //设置一个超时时间，单位为秒
-            ],
-        ]
+    $ctx = stream_context_create([
+        'http' => [
+            'timeout' => 3, //设置一个超时时间，单位为秒
+        ],
+    ]
     );
     $content = file_get_contents($url, 0, $ctx);
     unset($ctx);
@@ -381,6 +402,26 @@ function getOrderId($type = 'CI', $seqId = 0, $lenth = 18) {
     $orderId .= ceil($usec * pow(10, 7));
     $orderId = substr($orderId, 0, $lenth);
     return $type . $orderId;
+}
+
+/**
+ * belongsto Helpers.php
+ * 生成订单号 根据雪花算法
+ *
+ * @param      int     $datacenterId  数据中心ID
+ *
+ * @return     string  ( description_of_the_return_value )
+ *
+ * @author     assad
+ * @since      2021-04-16T10:55
+ */
+function genOrderId($datacenterId = 1) {
+    if (!class_exists(\Godruoyi\Snowflake\Snowflake)) {
+        throw new Exception('Snowflake不存在');
+    }
+    $snowflake = new \Godruoyi\Snowflake\Snowflake($datacenterId);
+    $snowflake->setStartTimeStamp(strtotime('2021-04-16') * 1000);
+    return $snowflake->id();
 }
 
 /**
@@ -725,6 +766,21 @@ function getResponseData($data = [], $tip = 'success', $code = 0) {
 
 /**
  * belongsto Helpers.php
+ * 隐藏手机号码中间4位
+ *
+ * @param      string  $cellphone  待脱敏号码
+ *
+ * @return     string  ( description_of_the_return_value )
+ *
+ * @author     assad
+ * @since      2019-07-29T16:58
+ */
+function hidePhoneNumber($cellphone) {
+    return substr($cellphone, 0, 3) . '****' . substr($cellphone, 7, 11);
+}
+
+/**
+ * belongsto Helpers.php
  *  URL重定向
  *
  * @param      string   $uri     需要跳转的URL
@@ -796,7 +852,7 @@ function jsonEncode($array = [], $numberCheck = 0) {
  * @author     assad
  * @since      2019-11-11T17:18
  */
-function intToStr($num) {
+function intToString($num) {
     $chars = getCharset();
     $string = '';
     $len = strlen($chars);
@@ -866,7 +922,7 @@ function ip() {
  *
  * @return     bool    True if allowed ip, False otherwise.
  */
-function isAllowedIp($ip, array $whitelist) {
+function isAllowedIp($ip, array $whitelist = []) {
     $ip = (string) $ip;
     if (in_array($ip, $whitelist, true)) {
         return true;
@@ -913,6 +969,38 @@ function rMkdir($pathname, $mode = 0777) {
 
     is_dir(dirname($pathname)) || rMkdir(dirname($pathname), $mode);
     return is_dir($pathname) || @mkdir($pathname, $mode);
+}
+
+/**
+ * belongsto Helpers.php
+ * 得到月份列表
+ *
+ * @param      int|string    $start  开始时间戳
+ * @param      int|string    $end    结束时间戳
+ *
+ * @return     array  月份列表
+ *
+ * @author     assad
+ * @since      2021-04-09T16:06
+ */
+function monthArrList($startTimeStamp, $endTimeStamp) {
+    if (!is_numeric($startTimeStamp) || !is_numeric($endTimeStamp) || ($endTimeStamp <= $startTimeStamp)) {
+        return [];
+    }
+    $start = date('Y-m', $startTimeStamp);
+    $end = date('Y-m', $endTimeStamp);
+    //转为时间戳
+    $start = strtotime($start . '-01');
+    $end = strtotime($end . '-01');
+    $i = 0;
+    $d = [];
+    while ($start <= $end) {
+        //这里累加每个月的的总秒数 计算公式：上一月1号的时间戳秒数减去当前月的时间戳秒数
+        $d[$i] = trim(date('Ym', $start), ' ');
+        $start += strtotime('+1 month', $start) - $start;
+        $i++;
+    }
+    return $d;
 }
 
 /**
@@ -991,7 +1079,7 @@ function random($length, $numeric = 0) {
     }
     $max = strlen($seed) - 1;
     for ($i = 0; $i < $length; $i++) {
-        $hash .= $seed{mt_rand(0, $max)};
+        $hash .= $seed[mt_rand(0, $max)];
     }
     return $hash;
 }
@@ -1102,16 +1190,16 @@ function randomDecimals($min, $max, $decimals = 2) {
  * @author     assad
  * @since      2019-11-12T23:36
  */
-function Runserialize($str, $array = array(), $i = 1) {
+function runSerialize($str, $array = [], $i = 1) {
     $str = explode("\n$i\n", $str);
     foreach ($str as $key => $value) {
         $k = substr($value, 0, strpos($value, "\t"));
         $v = substr($value, strpos($value, "\t") + 1);
         if (strpos($v, "\n") !== false) {
             $next = $i + 1;
-            $array[$k] = Runserialize($v, $array[$k], $next);
+            $array[$k] = runSerialize($v, $array[$k], $next);
         } elseif (strpos($v, "\t") !== false) {
-            $array[$k] = Rarray($array[$k], $v);
+            $array[$k] = rarray($array[$k], $v);
         } else {
             $array[$k] = $v;
         }
@@ -1131,11 +1219,11 @@ function Runserialize($str, $array = array(), $i = 1) {
  * @author     assad
  * @since      2019-11-12T23:37
  */
-function Rarray($array, $string) {
+function rarray($array, $string) {
     $k = substr($string, 0, strpos($string, "\t"));
     $v = substr($string, strpos($string, "\t") + 1);
     if (strpos($v, "\t") !== false) {
-        $array[$k] = Rarray($array[$k], $v);
+        $array[$k] = rarray($array[$k], $v);
     } else {
         $array[$k] = $v;
     }
@@ -1155,7 +1243,7 @@ function Rarray($array, $string) {
  * @author     assad
  * @since      2019-11-12T23:38
  */
-function Rserialize($array, $ret = '', $i = 1) {
+function rserialize($array = [], $ret = '', $i = 1) {
     if (!is_array($array)) {
         return null;
     }
@@ -1163,7 +1251,7 @@ function Rserialize($array, $ret = '', $i = 1) {
         if (is_array($v)) {
             $next = $i + 1;
             $ret .= "$k\t";
-            $ret = Rserialize($v, $ret, $next);
+            $ret = rserialize($v, $ret, $next);
             $ret .= "\n$i\n";
         } else {
             $ret .= "$k\t$v\n$i\n";
@@ -1186,7 +1274,7 @@ function Rserialize($array, $ret = '', $i = 1) {
  * @author     assad
  * @since      2019-11-11T17:17
  */
-function strToInt($string) {
+function stringToInt($string) {
     $chars = getCharset();
     $integer = 0;
     $string = strrev($string);
@@ -1341,15 +1429,12 @@ function writeLog($fileName, $data, $method = 'wb+', $ifLock = 1, $check = 1, $c
     if (!$fileName) {
         return false;
     }
-
     if ($check && strpos($fileName, '..') !== false) {
         return false;
     }
-
     if (!is_dir(dirname($fileName)) && !rMkdir(dirname($fileName), 0777)) {
         return false;
     }
-
     $ret = writeFile($fileName, $data, $method, $ifLock, $chmod);
     return $ret;
 }
@@ -1369,23 +1454,18 @@ function writeFile($filePath, $data, $method = 'wb+', $ifLock = 1, $chmod = 1) {
     if (($handle = fopen($filePath, $method)) == false) {
         return false;
     }
-
     if ($ifLock) {
         flock($handle, LOCK_EX);
     }
-
     if (fwrite($handle, $data) === false) {
         return false;
     }
-
     if ($method == "wb+") {
         ftruncate($handle, strlen($data));
     }
-
     if ($ifLock) {
         flock($handle, LOCK_UN);
     }
-
     fclose($handle);
     $chmod && @chmod($filename, 0777);
     return true;
