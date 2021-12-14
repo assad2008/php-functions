@@ -8,7 +8,7 @@
  * @Synopsis:  函数库
  * @Version:  1.0
  * @Last Modified by:   assad
- * @Last Modified time: 2021-04-22 17:50:12
+ * @Last Modified time: 2021-12-14 09:25:47
  */
 
 /**
@@ -256,16 +256,23 @@ function ciGmdate($timestamp = "", $format = "Y-n-d H:i", $convert = 1) {
  * @param      integer  $type   The type
  */
 function debug($var = null, $type = 2) {
+    $runMode = php_sapi_name();
     $trace = debug_backtrace();
     if ($var === null) {
         $var = $GLOBALS;
     }
-    header("Content-type:text/html;charset=utf-8");
+    if ($runMode != 'cli') {
+        header("Content-type:text/html;charset=utf-8");
+    }
     if ($type == 1) {
         echo '<pre>';
         print_r($var);
     } elseif ($type == 2) {
-        echo "<b><font>Run Postion：{$trace[0]['file']}；Line：{$trace[0]['line']}</font></b><br>";
+        if ($runMode != 'cli') {
+            echo "<b><font>Run Postion：{$trace[0]['file']}；Line：{$trace[0]['line']}</font></b><br>";
+        } else {
+            echo "Run Postion：{$trace[0]['file']}；Line：{$trace[0]['line']}\n";
+        }
         dump_r($var);
     }
     exit();
@@ -368,8 +375,7 @@ function fileGetContents($url) {
         'http' => [
             'timeout' => 3, //设置一个超时时间，单位为秒
         ],
-    ]
-    );
+    ]);
     $content = file_get_contents($url, 0, $ctx);
     unset($ctx);
     return $content;
@@ -395,7 +401,7 @@ function getFileExt($fileName) {
  *
  * @return     string
  */
-function getOrderId($type = 'CI', $seqId = 0, $lenth = 18) {
+function getOrderId($type = 'YEE', $seqId = 0, $lenth = 18) {
     list($usec, $sec) = explode(" ", microtime());
     $orderId = date('ymdHis', $sec);
     $orderId .= substr($seqId * rand(11, 55), 0, 5);
@@ -460,7 +466,6 @@ function getRandPro($proArr) {
     $result = '';
     //概率数组的总概率精度
     $proSum = array_sum($proArr);
-
     //概率数组循环
     foreach ($proArr as $key => $proCur) {
         $randNum = mt_rand(1, $proSum);
@@ -472,7 +477,6 @@ function getRandPro($proArr) {
         }
     }
     unset($proArr);
-
     return $result;
 }
 
@@ -576,8 +580,7 @@ function getCharset() {
  * @author     assad
  * @since      2019-06-29T16:08
  */
-function getRemoteFileSize($url) //远程获取文件长度
-{
+function getRemoteFileSize($url) {
     $url = parse_url($url);
     if ($fp = @dfopen($url['host'], empty($url['port']) ? 80 : $url['port'], $error)) {
         fputs($fp, "GET " . (empty($url['path']) ? '/' : $url['path']) . " HTTP/1.1\r\n");
