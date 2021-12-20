@@ -1,14 +1,14 @@
 <?php
 
 /**
- * @Filename:  functions_helper.php
+ * @Filename: functions_helper.php
  * @Author:  assad
  * @Email:  rlk002@gmail.com
  * @Date:  2019-07-18 11:00:45
  * @Synopsis:  函数库
  * @Version:  1.0
  * @Last Modified by:   assad
- * @Last Modified time: 2021-12-14 09:25:47
+ * @Last Modified time: 2021-12-20 17:05:19
  */
 
 /**
@@ -170,7 +170,7 @@ function ciAddslashes($string, $force = 1) {
         foreach ($keys as $key) {
             $val = $string[$key];
             unset($string[$key]);
-            $string[addslashes($key)] = ci_addslashes($val, $force);
+            $string[addslashes($key)] = ciAddslashes($val, $force);
         }
     } else {
         $string = addslashes($string);
