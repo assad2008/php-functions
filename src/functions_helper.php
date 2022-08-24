@@ -1,14 +1,14 @@
 <?php
 
 /**
- * @Filename: functions_helper.php
+ * @Filename:  functions_helper.php
  * @Author:  assad
  * @Email:  rlk002@gmail.com
  * @Date:  2019-07-18 11:00:45
  * @Synopsis:  函数库
  * @Version:  1.0
  * @Last Modified by:   assad
- * @Last Modified time: 2021-12-20 17:05:19
+ * @Last Modified time: 2022-08-24 12:02:25
  */
 
 /**
@@ -295,7 +295,6 @@ function downloadFile($file, $fileName = "") {
         header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
         header('Pragma: public');
         header('Content-Length: ' . filesize($file));
-        ob_clean();
         flush();
         readfile($file);
         exit(0);
@@ -554,6 +553,21 @@ function dfopen($url, $limit = 0, $post = '', $cookie = '', $ip = '', $timeout =
         }
         @fclose($fp);
         return $return;
+    }
+}
+
+/**
+ * 输出JSON
+ *
+ * @param      array   $data   The data
+ * @param      bool    $exit   是否退出
+ */
+function echoJson($data, $exit = true) {
+    $jsonData = jsonEncode($data);
+    header("Content-type: application/json; charset=utf-8");
+    echo $jsonData;
+    if ($exit) {
+        exit(0);
     }
 }
 
