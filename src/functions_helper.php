@@ -8,7 +8,7 @@
  * @Synopsis:  函数库
  * @Version:  1.0
  * @Last Modified by:   assad
- * @Last Modified time: 2022-08-24 12:02:25
+ * @Last Modified time: 2022-09-23 09:19:18
  */
 
 /**
@@ -134,6 +134,49 @@ function cutStr($string, $length, $dot = '...') {
         }
     }
     return $strcut . $dot;
+}
+
+/**
+ * 转码
+ *
+ * @param      string  $string        The string
+ * @param      string  $fromEncoding  The from encoding
+ * @param      string  $toEncoding    To encoding
+ *
+ * @return     <type>  ( description_of_the_return_value )
+ */
+function convertEncoding($string, $fromEncoding, $toEncoding = 'utf-8') {
+    $toEncoding = str_replace('utf8', 'utf-8', $toEncoding);
+    if (function_exists('mb_convert_encoding')) {
+        /* Remove like utf-8//TRANSLIT. */
+        $position = strpos($toEncoding, '//');
+        if ($position !== false) {
+            $toEncoding = substr($toEncoding, 0, $position);
+        }
+
+        /* Check string encoding. */
+        $encodings = array_merge(array('GB2312', 'GBK', 'BIG5'), mb_list_encodings());
+        $encoding = strtolower(mb_detect_encoding($string, $encodings));
+        if ($encoding == $toEncoding) {
+            return $string;
+        }
+
+        return mb_convert_encoding($string, $toEncoding, $encoding);
+    } elseif (function_exists('iconv')) {
+        if ($fromEncoding == $toEncoding) {
+            return $string;
+        }
+
+        $convertString = @iconv($fromEncoding, $toEncoding, $string);
+        /* iconv error then return original. */
+        if (!$convertString) {
+            return $string;
+        }
+
+        return $convertString;
+    }
+
+    return $string;
 }
 
 /**
@@ -582,6 +625,34 @@ function echoJson($data, $exit = true) {
  */
 function getCharset() {
     return '0123456789abcdefghijklmnopqrstuvwxyz-';
+}
+
+/**
+ * 获取webRoot。
+ *
+ * @param      bool    $full   The full
+ *
+ * @return     <type>  The web root.
+ */
+function getWebRoot($full = false) {
+    $path = $_SERVER['SCRIPT_NAME'];
+
+    if (PHP_SAPI == 'cli') {
+        if (isset($_SERVER['argv'][1])) {
+            $url = parse_url($_SERVER['argv'][1]);
+            $path = empty($url['path']) ? '/' : rtrim($url['path'], '/');
+        }
+        $path = empty($path) ? '/' : preg_replace('/\/www$/', '/www/', $path);
+    }
+
+    if ($full) {
+        $http = (isset($_SERVER['HTTPS']) and strtolower($_SERVER['HTTPS']) != 'off') ? 'https://' : 'http://';
+        return $http . $_SERVER['HTTP_HOST'] . substr($path, 0, (strrpos($path, '/') + 1));
+    }
+
+    $path = substr($path, 0, (strrpos($path, '/') + 1));
+    $path = str_replace('\\', '/', $path);
+    return $path;
 }
 
 /**
@@ -1104,6 +1175,20 @@ function random($length, $numeric = 0) {
 }
 
 /**
+ * Removes an utf 8 bom.
+ *
+ * @param      string  $string  The string
+ *
+ * @return     <type>  ( description_of_the_return_value )
+ */
+function removeUTF8Bom($string) {
+    if (substr($string, 0, 3) == pack('CCC', 239, 187, 191)) {
+        return substr($string, 3);
+    }
+    return $string;
+}
+
+/**
  * RC4算法
  *
  * @param      string   $string     要加密的字符串
@@ -1280,6 +1365,28 @@ function rserialize($array = [], $ret = '', $i = 1) {
         $ret = substr($ret, 0, -3);
     }
     return $ret;
+}
+
+/**
+ * 增强substr方法
+ *
+ * @param      string  $string  The string
+ * @param      int     $length  The length
+ * @param      string  $append  The append
+ *
+ * @return     bool    ( description_of_the_return_value )
+ */
+function xsubstr($string, $length, $append = '') {
+    $rawString = $string;
+
+    if (function_exists('mb_substr')) {
+        $string = mb_substr($string, 0, $length, 'utf-8');
+    }
+
+    preg_match_all("/./su", $string, $data);
+    $string = join("", array_slice($data[0], 0, $length));
+
+    return ($string != $rawString) ? $string . $append : $string;
 }
 
 /**
