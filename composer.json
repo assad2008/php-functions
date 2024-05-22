@@ -17,8 +17,8 @@
         "email": "rlk002@gmail.com"
     },
     "require": {
-        "php": "^5.4 || ^7.0",
-        "leeoniya/dump-r": "^2.1",
+        "php": "^5.4 || ^7.0 || ^8.0",
+        "assad2008/dump-r": "^1.0",
         "godruoyi/php-snowflake": "^1.1"
     },
     "autoload":{
