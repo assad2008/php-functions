@@ -24,14 +24,26 @@
  * @author     assad
  * @since      2020-02-11T16:30
  */
-function baseUrl($atRoot = FALSE, $atCore = FALSE, $parse = FALSE) {
+function baseUrl($atRoot = false, $atCore = false, $parse = false)
+{
     if (isset($_SERVER['HTTP_HOST'])) {
         $http = isset($_SERVER['HTTPS']) && strtolower($_SERVER['HTTPS']) !== 'off' ? 'https' : 'http';
         $hostname = $_SERVER['HTTP_HOST'];
-        $dir = str_replace(basename($_SERVER['SCRIPT_NAME']), '', $_SERVER['SCRIPT_NAME']);
+        $scriptName = isset($_SERVER['SCRIPT_NAME']) ? $_SERVER['SCRIPT_NAME'] : '/';
+        $dir = str_replace(basename($scriptName), '', $scriptName);
 
-        $core = preg_split('@/@', str_replace($_SERVER['DOCUMENT_ROOT'], '', realpath(dirname(__FILE__))), NULL, PREG_SPLIT_NO_EMPTY);
-        $core = $core[0];
+        $core = '';
+        $documentRoot = isset($_SERVER['DOCUMENT_ROOT']) ? $_SERVER['DOCUMENT_ROOT'] : '';
+        $currentDir = realpath(dirname(__FILE__));
+        if ($documentRoot !== '' && $currentDir !== false) {
+            $coreList = preg_split('@/@', str_replace($documentRoot, '', $currentDir), null, PREG_SPLIT_NO_EMPTY);
+            if (!empty($coreList)) {
+                $core = $coreList[0];
+            }
+        }
+        if ($atCore && $core === '') {
+            $atCore = false;
+        }
 
         $tmplt = $atRoot ? ($atCore ? "%s://%s/%s/" : "%s://%s/") : ($atCore ? "%s://%s/%s/" : "%s://%s%s");
         $end = $atRoot ? ($atCore ? $core : $hostname) : ($atCore ? $core : $dir);
@@ -60,7 +72,8 @@ function baseUrl($atRoot = FALSE, $atCore = FALSE, $parse = FALSE) {
  *
  * @return     string   返回已截的字符
  */
-function cutStr($string, $length, $dot = '...') {
+function cutStr($string, $length, $dot = '...')
+{
     $strlen = strlen($string);
     if ($strlen <= $length) {
         return $string;
@@ -145,8 +158,10 @@ function cutStr($string, $length, $dot = '...') {
  *
  * @return     <type>  ( description_of_the_return_value )
  */
-function convertEncoding($string, $fromEncoding, $toEncoding = 'utf-8') {
-    $toEncoding = str_replace('utf8', 'utf-8', $toEncoding);
+function convertEncoding($string, $fromEncoding, $toEncoding = 'utf-8')
+{
+    $fromEncoding = strtolower(str_replace('utf8', 'utf-8', $fromEncoding));
+    $toEncoding = strtolower(str_replace('utf8', 'utf-8', $toEncoding));
     if (function_exists('mb_convert_encoding')) {
         /* Remove like utf-8//TRANSLIT. */
         $position = strpos($toEncoding, '//');
@@ -155,8 +170,12 @@ function convertEncoding($string, $fromEncoding, $toEncoding = 'utf-8') {
         }
 
         /* Check string encoding. */
-        $encodings = array_merge(array('GB2312', 'GBK', 'BIG5'), mb_list_encodings());
-        $encoding = strtolower(mb_detect_encoding($string, $encodings));
+        $encodings = array_merge(['GB2312', 'GBK', 'BIG5'], mb_list_encodings());
+        $encoding = mb_detect_encoding($string, $encodings, true);
+        if ($encoding === false) {
+            $encoding = $fromEncoding;
+        }
+        $encoding = strtolower($encoding);
         if ($encoding == $toEncoding) {
             return $string;
         }
@@ -189,10 +208,19 @@ function convertEncoding($string, $fromEncoding, $toEncoding = 'utf-8') {
  * @author     assad
  * @since      2019-06-29T16:12
  */
-function countFileLines($filepath) {
-    $fp = fopen($filepath, "r");
+function countFileLines($filepath)
+{
+    if (!$filepath || !is_file($filepath) || !is_readable($filepath)) {
+        return 0;
+    }
+
+    $fp = @fopen($filepath, "r");
+    if (!$fp) {
+        return 0;
+    }
+
     $line = 0;
-    while (fgets($fp)) {
+    while (fgets($fp) !== false) {
         $line++;
     }
     fclose($fp);
@@ -207,18 +235,17 @@ function countFileLines($filepath) {
  *
  * @return     <type>   ( description_of_the_return_value )
  */
-function ciAddslashes($string, $force = 1) {
+function ciAddslashes($string, $force = 1)
+{
     if (is_array($string)) {
-        $keys = array_keys($string);
-        foreach ($keys as $key) {
-            $val = $string[$key];
-            unset($string[$key]);
-            $string[addslashes($key)] = ciAddslashes($val, $force);
+        $data = [];
+        foreach ($string as $key => $val) {
+            $data[addslashes($key)] = ciAddslashes($val, $force);
         }
-    } else {
-        $string = addslashes($string);
+        return $data;
     }
-    return $string;
+
+    return addslashes($string);
 }
 
 /**
@@ -230,7 +257,8 @@ function ciAddslashes($string, $force = 1) {
  *
  * @return     array|string    ( description_of_the_return_value )
  */
-function ciGmdate($timestamp = "", $format = "Y-n-d H:i", $convert = 1) {
+function ciGmdate($timestamp = "", $format = "Y-n-d H:i", $convert = 1)
+{
     global $timeoffset;
     $todaytime = strtotime("today");
     $timeoffset = $timeoffset ? $timeoffset : 8;
@@ -260,7 +288,6 @@ function ciGmdate($timestamp = "", $format = "Y-n-d H:i", $convert = 1) {
     }
     if ($todaytime <= $timestamp) {
         if (10800 < $time) {
-            $d = date('n-d H:i', $timestamp);
             return $lang[4] . "&nbsp;" . gmdate($timeformat, $timestamp + $timeoffset * 3600);
         }
         if (3600 < $time) {
@@ -292,33 +319,622 @@ function ciGmdate($timestamp = "", $format = "Y-n-d H:i", $convert = 1) {
     }
 }
 
+if (!function_exists('dumpx')) {
+    /**
+     * 优雅打印变量，支持 Web / CLI
+     *
+     * @param mixed       $data    要打印的数据
+     * @param string|null $title   标题
+     * @param bool        $exit    是否打印后终止
+     * @return void
+     */
+    function dumpx($data, $title = null, $exit = true)
+    {
+        $caller = dumpx_get_caller();
+        $time = date('Y-m-d H:i:s');
+        $type = dumpx_get_type($data);
+        $body = dumpx_format_value($data);
+
+        if (dumpx_is_cli()) {
+            echo dumpx_render_cli($body, $title, $type, $caller['file'], $caller['line'], $time);
+        } else {
+            echo dumpx_render_web($body, $title, $type, $caller['file'], $caller['line'], $time);
+        }
+
+        if ($exit) {
+            exit(1);
+        }
+    }
+}
+
+if (!function_exists('ddx')) {
+    /**
+     * 打印并终止
+     *
+     * @param mixed       $data
+     * @param string|null $title
+     * @return void
+     */
+    function ddx($data, $title = null)
+    {
+        dumpx($data, $title, true);
+    }
+}
+
+if (!function_exists('dumpx_is_cli')) {
+    /**
+     * 鍒ゆ柇鏄惁涓?CLI鐜
+     *
+     * @return bool
+     */
+    function dumpx_is_cli()
+    {
+        return PHP_SAPI === 'cli' || PHP_SAPI === 'phpdbg';
+    }
+}
+
+if (!function_exists('dumpx_get_caller')) {
+    /**
+     * 鑾峰彇璋冪敤浣嶇疆
+     *
+     * @return array
+     */
+    function dumpx_get_caller()
+    {
+        $trace = debug_backtrace();
+        $caller = [
+            'file' => '[internal]',
+            'line' => 0,
+        ];
+
+        if (isset($trace[1])) {
+            if (isset($trace[1]['file'])) {
+                $caller['file'] = $trace[1]['file'];
+            }
+            if (isset($trace[1]['line'])) {
+                $caller['line'] = (int) $trace[1]['line'];
+            }
+            return $caller;
+        }
+
+        if (isset($trace[0])) {
+            if (isset($trace[0]['file'])) {
+                $caller['file'] = $trace[0]['file'];
+            }
+            if (isset($trace[0]['line'])) {
+                $caller['line'] = (int) $trace[0]['line'];
+            }
+        }
+
+        return $caller;
+    }
+}
+
+if (!function_exists('dumpx_get_type')) {
+    /**
+     * 鍏煎浣庣増鏈?PHP鐨勭被鍨嬫弿杩?
+     *
+     * @param mixed $data
+     * @return string
+     */
+    function dumpx_get_type($data)
+    {
+        if (function_exists('get_debug_type')) {
+            return get_debug_type($data);
+        }
+
+        if (is_object($data)) {
+            return get_class($data);
+        }
+
+        if (is_array($data)) {
+            return 'array';
+        }
+
+        if (is_bool($data)) {
+            return 'bool';
+        }
+
+        if ($data === null) {
+            return 'null';
+        }
+
+        if (is_resource($data)) {
+            return 'resource (' . get_resource_type($data) . ')';
+        }
+
+        return gettype($data);
+    }
+}
+
+if (!function_exists('dumpx_format_value')) {
+    /**
+     * 格式化打印内容
+     *
+     * @param mixed $data
+     * @return string
+     */
+    function dumpx_format_value($data)
+    {
+        if (is_string($data)) {
+            return $data;
+        }
+
+        if (is_array($data) || is_object($data)) {
+            $json = dumpx_try_json($data);
+            if ($json !== null) {
+                return $json;
+            }
+        }
+
+        if (is_bool($data)) {
+            return $data ? 'true' : 'false';
+        }
+
+        if ($data === null) {
+            return 'null';
+        }
+
+        if (is_scalar($data)) {
+            return (string) $data;
+        }
+
+        if (is_resource($data)) {
+            return '[resource:' . get_resource_type($data) . ']';
+        }
+
+        return print_r($data, true);
+    }
+}
+
+if (!function_exists('dumpx_get_json_options')) {
+    /**
+     * 鏍规嵁褰撳墠PHP鐗堟湰鐢熸垚 JSON option
+     *
+     * @return int
+     */
+    function dumpx_get_json_options()
+    {
+        $constants = [
+            'JSON_PRETTY_PRINT',
+            'JSON_UNESCAPED_UNICODE',
+            'JSON_UNESCAPED_SLASHES',
+            'JSON_PARTIAL_OUTPUT_ON_ERROR',
+        ];
+        $options = 0;
+
+        foreach ($constants as $constantName) {
+            if (defined($constantName)) {
+                $options |= constant($constantName);
+            }
+        }
+
+        return $options;
+    }
+}
+
+if (!function_exists('dumpx_try_json')) {
+    /**
+     * 尝试转成漂亮 JSON
+     *
+     * @param mixed $data
+     * @return string|null
+     */
+    function dumpx_try_json($data)
+    {
+        $normalized = dumpx_normalize($data);
+        $json = json_encode($normalized, dumpx_get_json_options());
+
+        if ($json !== false) {
+            return $json;
+        }
+
+        return null;
+    }
+}
+
+if (!function_exists('dumpx_normalize')) {
+    /**
+     * 递归标准化对象/数组，避免部分对象无法直接 json_encode
+     *
+     * @param mixed $data
+     * @param int   $depth
+     * @return mixed
+     */
+    function dumpx_normalize($data, $depth = 0)
+    {
+        if ($depth > 8) {
+            return '... max depth reached ...';
+        }
+
+        if (is_array($data)) {
+            $result = [];
+            foreach ($data as $key => $value) {
+                $result[$key] = dumpx_normalize($value, $depth + 1);
+            }
+            return $result;
+        }
+
+        if (is_object($data)) {
+            if ($data instanceof JsonSerializable) {
+                try {
+                    return dumpx_normalize($data->jsonSerialize(), $depth + 1);
+                } catch (Exception $e) {
+                }
+            }
+
+            if ($data instanceof Traversable) {
+                $result = [];
+                foreach ($data as $key => $value) {
+                    $result[$key] = dumpx_normalize($value, $depth + 1);
+                }
+                return [
+                    '__class__' => get_class($data),
+                    '__data__' => $result,
+                ];
+            }
+
+            $vars = get_object_vars($data);
+
+            return [
+                '__class__' => get_class($data),
+                '__data__' => dumpx_normalize($vars, $depth + 1),
+            ];
+        }
+
+        if (is_resource($data)) {
+            return '[resource:' . get_resource_type($data) . ']';
+        }
+
+        return $data;
+    }
+}
+
+if (!function_exists('dumpx_strlen')) {
+    /**
+     * 鍏煎鎬у瓧绗︿覆闀垮害
+     *
+     * @param string $value
+     * @return int
+     */
+    function dumpx_strlen($value)
+    {
+        if (function_exists('mb_strlen')) {
+            return (int) mb_strlen($value, 'UTF-8');
+        }
+
+        return strlen($value);
+    }
+}
+
+if (!function_exists('dumpx_substr')) {
+    /**
+     * 鍏煎鎬у瓧绗︿覆鎴彇
+     *
+     * @param string   $value
+     * @param int      $start
+     * @param int|null $length
+     * @return string
+     */
+    function dumpx_substr($value, $start, $length = null)
+    {
+        if (function_exists('mb_substr')) {
+            if ($length === null) {
+                return mb_substr($value, $start, null, 'UTF-8');
+            }
+
+            return mb_substr($value, $start, $length, 'UTF-8');
+        }
+
+        if ($length === null) {
+            return substr($value, $start);
+        }
+
+        return substr($value, $start, $length);
+    }
+}
+
+if (!function_exists('dumpx_wrap_cli_lines')) {
+    /**
+     * 鎶婂瓧绗︿覆鎸夊浐瀹氬搴︽媶鍒?CLI琛?
+     *
+     * @param string $text
+     * @param int    $width
+     * @return array
+     */
+    function dumpx_wrap_cli_lines($text, $width)
+    {
+        $text = str_replace("\t", '    ', (string) $text);
+        if ($text === '') {
+            return [''];
+        }
+
+        $lines = [];
+        while (dumpx_strlen($text) > $width) {
+            $lines[] = dumpx_substr($text, 0, $width);
+            $text = dumpx_substr($text, $width);
+        }
+        $lines[] = $text;
+
+        return $lines;
+    }
+}
+
+if (!function_exists('dumpx_render_cli_row')) {
+    /**
+     * 娓叉煋涓€琛?CLI杈撳嚭
+     *
+     * @param string $text
+     * @param int    $width
+     * @param string $align
+     * @return string
+     */
+    function dumpx_render_cli_row($text, $width, $align = 'left')
+    {
+        $text = (string) $text;
+        $padding = $width - dumpx_strlen($text);
+        if ($padding < 0) {
+            $padding = 0;
+        }
+
+        if ($align === 'center') {
+            $left = (int) floor($padding / 2);
+            $right = $padding - $left;
+            return '| ' . str_repeat(' ', $left) . $text . str_repeat(' ', $right) . ' |' . PHP_EOL;
+        }
+
+        return '| ' . $text . str_repeat(' ', $padding) . ' |' . PHP_EOL;
+    }
+}
+
+if (!function_exists('dumpx_render_cli_output')) {
+    /**
+     * CLI 杈撳嚭鏂板疄鐜?
+     *
+     * @param string $body
+     * @param string $title
+     * @param string $type
+     * @param string $file
+     * @param int    $line
+     * @param string $time
+     * @return string
+     */
+    function dumpx_render_cli_output($body, $title, $type, $file, $line, $time)
+    {
+        $width = 80;
+        $contentWidth = $width - 4;
+        $label = $title ? (string) $title : 'DEBUG';
+        $border = '+' . str_repeat('-', $width - 2) . '+';
+        $output = PHP_EOL;
+
+        $output .= $border . PHP_EOL;
+        $output .= dumpx_render_cli_row($label, $contentWidth, 'center');
+        $output .= $border . PHP_EOL;
+        $output .= dumpx_render_cli_row('Type : ' . $type, $contentWidth);
+        $output .= dumpx_render_cli_row('Time : ' . $time, $contentWidth);
+        $output .= dumpx_render_cli_row('From : ' . $file . ':' . $line, $contentWidth);
+        $output .= $border . PHP_EOL;
+
+        $lines = preg_split("/\r\n|\r|\n/", rtrim((string) $body));
+        if (!$lines || empty($lines)) {
+            $lines = [''];
+        }
+
+        foreach ($lines as $lineText) {
+            $wrappedLines = dumpx_wrap_cli_lines($lineText, $contentWidth);
+            foreach ($wrappedLines as $wrappedLine) {
+                $output .= dumpx_render_cli_row($wrappedLine, $contentWidth);
+            }
+        }
+
+        $output .= $border . PHP_EOL;
+
+        return $output;
+    }
+}
+
+if (!function_exists('dumpx_render_cli')) {
+    /**
+     * CLI 渲染
+     *
+     * @param string      $body
+     * @param string|null $title
+     * @param string      $type
+     * @param string      $file
+     * @param int         $line
+     * @param string      $time
+     * @return string
+     */
+    function dumpx_render_cli($body, $title, $type, $file, $line, $time)
+    {
+        return dumpx_render_cli_output($body, $title, $type, $file, $line, $time);
+    }
+}
+
+if (!function_exists('dumpx_escape_html')) {
+    /**
+     * Web 杈撳嚭鍓嶈浆涔夊唴瀹?
+     *
+     * @param mixed $value
+     * @return string
+     */
+    function dumpx_escape_html($value)
+    {
+        return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+    }
+}
+
+if (!function_exists('dumpx_render_web_output')) {
+    /**
+     * Web 杈撳嚭鏂板疄鐜?
+     *
+     * @param string $body
+     * @param string $title
+     * @param string $type
+     * @param string $file
+     * @param int    $line
+     * @param string $time
+     * @return string
+     */
+    function dumpx_render_web_output($body, $title, $type, $file, $line, $time)
+    {
+        static $styleInjected = false;
+        $html = '';
+
+        if (!$styleInjected) {
+            $styleInjected = true;
+
+            $html .= <<<HTML
+<style>
+.dumpx-wrap{
+    margin:16px 0;
+    font-family:Consolas,Menlo,Monaco,"Courier New",monospace;
+    max-width:100%;
+}
+.dumpx-card{
+    background:linear-gradient(145deg,#0f172a 0%,#111827 55%,#0b1220 100%);
+    color:#e5e7eb;
+    border:1px solid rgba(56,189,248,.25);
+    border-radius:14px;
+    box-shadow:0 10px 30px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.03);
+    overflow:hidden;
+}
+.dumpx-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:12px 16px;
+    border-bottom:1px solid rgba(148,163,184,.16);
+    background:linear-gradient(90deg,rgba(14,165,233,.08),rgba(168,85,247,.08));
+}
+.dumpx-title{
+    font-size:14px;
+    font-weight:700;
+    color:#67e8f9;
+    letter-spacing:.5px;
+}
+.dumpx-badge{
+    font-size:12px;
+    padding:3px 10px;
+    border-radius:999px;
+    background:rgba(34,197,94,.12);
+    border:1px solid rgba(34,197,94,.28);
+    color:#86efac;
+}
+.dumpx-meta{
+    display:grid;
+    grid-template-columns:90px 1fr;
+    gap:6px 12px;
+    padding:14px 16px;
+    border-bottom:1px solid rgba(148,163,184,.12);
+    font-size:13px;
+}
+.dumpx-meta-label{
+    color:#93c5fd;
+}
+.dumpx-meta-value{
+    color:#cbd5e1;
+    word-break:break-all;
+}
+.dumpx-body{
+    position:relative;
+}
+.dumpx-pre{
+    margin:0;
+    padding:16px;
+    overflow:auto;
+    line-height:1.6;
+    font-size:13px;
+    color:#e2e8f0;
+    background:
+        linear-gradient(rgba(255,255,255,.02), rgba(255,255,255,.02)),
+        repeating-linear-gradient(
+            to bottom,
+            transparent 0,
+            transparent 27px,
+            rgba(255,255,255,.025) 28px
+        );
+}
+.dumpx-pre code{
+    color:inherit;
+    white-space:pre-wrap;
+    word-break:break-word;
+}
+.dumpx-corner{
+    position:absolute;
+    top:10px;
+    right:12px;
+    font-size:11px;
+    color:rgba(148,163,184,.5);
+    user-select:none;
+}
+</style>
+HTML;
+        }
+
+        $safeTitle = dumpx_escape_html($title ? $title : 'DEBUG');
+        $safeType = dumpx_escape_html($type);
+        $safeFile = dumpx_escape_html($file);
+        $safeTime = dumpx_escape_html($time);
+        $safeBody = dumpx_escape_html($body);
+        $safeLine = dumpx_escape_html($line);
+
+        $html .= <<<HTML
+<div class="dumpx-wrap">
+    <div class="dumpx-card">
+        <div class="dumpx-head">
+            <div class="dumpx-title">{$safeTitle}</div>
+            <div class="dumpx-badge">{$safeType}</div>
+        </div>
+        <div class="dumpx-meta">
+            <div class="dumpx-meta-label">Time</div>
+            <div class="dumpx-meta-value">{$safeTime}</div>
+
+            <div class="dumpx-meta-label">File</div>
+            <div class="dumpx-meta-value">{$safeFile}</div>
+
+            <div class="dumpx-meta-label">Line</div>
+            <div class="dumpx-meta-value">{$safeLine}</div>
+        </div>
+        <div class="dumpx-body">
+            <div class="dumpx-corner">PHP DEBUG PANEL</div>
+            <pre class="dumpx-pre"><code>{$safeBody}</code></pre>
+        </div>
+    </div>
+</div>
+HTML;
+
+        return $html;
+    }
+}
+
+if (!function_exists('dumpx_render_web')) {
+    /**
+     * Web 渲染
+     *
+     * @param string      $body
+     * @param string|null $title
+     * @param string      $type
+     * @param string      $file
+     * @param int         $line
+     * @param string      $time
+     * @return string
+     */
+    function dumpx_render_web($body, $title, $type, $file, $line, $time)
+    {
+        return dumpx_render_web_output($body, $title, $type, $file, $line, $time);
+    }
+}
+
 /**
  * 打印变量，会终止程序运行
  *
- * @param      <type>   $var    调试的信息
- * @param      integer  $type   The type
+ * @param      mixed    $var    调试的信息
+ * @param      boolean  $isExit 是否终止程序
  */
-function debug($var = null, $type = 2) {
-    $runMode = php_sapi_name();
-    $trace = debug_backtrace();
-    if ($var === null) {
-        $var = $GLOBALS;
-    }
-    if ($runMode != 'cli') {
-        header("Content-type:text/html;charset=utf-8");
-    }
-    if ($type == 1) {
-        echo '<pre>';
-        print_r($var);
-    } elseif ($type == 2) {
-        if ($runMode != 'cli') {
-            echo "<b><font>Run Postion：{$trace[0]['file']}；Line：{$trace[0]['line']}</font></b><br>";
-        } else {
-            echo "Run Postion：{$trace[0]['file']}；Line：{$trace[0]['line']}\n";
-        }
-        dump_r($var);
-    }
-    exit();
+function debug($var = null, $isExit = true)
+{
+    dumpx($var, 'DEBUG', $isExit);
 }
 
 /**
@@ -327,12 +943,13 @@ function debug($var = null, $type = 2) {
  * @param      string  $file      本地文件地址
  * @param      string  $filename  下载的文件名称
  */
-function downloadFile($file, $fileName = "") {
+function downloadFile($file, $fileName = "")
+{
     $downFileName = $fileName ?: basename($file);
     if (file_exists($file)) {
         header('Content-Description: File Transfer');
         header('Content-Type: application/octet-stream');
-        header('Content-Disposition: attachment; filename=' . $downFileName);
+        header('Content-Disposition: attachment; filename="' . addslashes($downFileName) . '"');
         header('Content-Transfer-Encoding: binary');
         header('Expires: 0');
         header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
@@ -358,7 +975,8 @@ function downloadFile($file, $fileName = "") {
  * @author     assad
  * @since      2021-04-09T16:07
  */
-function dayArrList($month, $format = 'Ymd') {
+function dayArrList($month, $format = 'Ymd')
+{
     $time = strtotime($month . '10:10:10');
     $j = date("t", $time);
     $startTime = strtotime(date('Y-m-01', $time));
@@ -376,9 +994,10 @@ function dayArrList($month, $format = 'Ymd') {
  *
  * @return     flaot
  */
-function executeTime($sec = false) {
+function executeTime($sec = false)
+{
     $startTime = null;
-    if (defined(SYS_START_TIME)) {
+    if (defined('SYS_START_TIME')) {
         $startTime = SYS_START_TIME;
     }
     if (!$startTime) {
@@ -389,7 +1008,7 @@ function executeTime($sec = false) {
             $startTime = \Yaf_Registry::get("starttime") ?: 0;
         }
         if (class_exists('Zend_Registry')) {
-            $startTime = \Zend_Registry::isRegistered('starttime') ? \Zend_Registry::get('starttime') : 0;
+            $startTime = \Zend_Registry::isRegistered('starttime')  ?\Zend_Registry::get('starttime') : 0;
         }
     }
     if (!$startTime) {
@@ -412,14 +1031,18 @@ function executeTime($sec = false) {
  *
  * @return     string  ( 文件内容)
  */
-function fileGetContents($url) {
+function fileGetContents($url)
+{
+    if (!$url) {
+        return false;
+    }
+
     $ctx = stream_context_create([
         'http' => [
             'timeout' => 3, //设置一个超时时间，单位为秒
         ],
     ]);
-    $content = file_get_contents($url, 0, $ctx);
-    unset($ctx);
+    $content = @file_get_contents($url, false, $ctx);
     return $content;
 }
 
@@ -430,7 +1053,8 @@ function fileGetContents($url) {
  *
  * @return     string  文件扩展名
  */
-function getFileExt($fileName) {
+function getFileExt($fileName)
+{
     return addslashes(strtolower(substr(strrchr($fileName, '.'), 1, 10)));
 }
 
@@ -443,7 +1067,8 @@ function getFileExt($fileName) {
  *
  * @return     string
  */
-function getOrderId($type = 'YEE', $seqId = 0, $lenth = 18) {
+function getOrderId($type = 'YEE', $seqId = 0, $lenth = 18)
+{
     list($usec, $sec) = explode(" ", microtime());
     $orderId = date('ymdHis', $sec);
     $orderId .= substr($seqId * rand(11, 55), 0, 5);
@@ -463,7 +1088,8 @@ function getOrderId($type = 'YEE', $seqId = 0, $lenth = 18) {
  * @author     assad
  * @since      2021-04-16T10:55
  */
-function genOrderId($datacenterId = 1) {
+function genOrderId($datacenterId = 1)
+{
     if (!class_exists('\Godruoyi\Snowflake\Snowflake')) {
         throw new Exception('Snowflake不存在');
     }
@@ -481,7 +1107,8 @@ function genOrderId($datacenterId = 1) {
  *
  * @return     array   The json data.
  */
-function getJsonData($data = [], $tip = 'success', $code = 0) {
+function getJsonData($data = [], $tip = 'success', $code = 0)
+{
     $responseData = [];
     $responseData['code'] = $code;
     $responseData['msg'] = $tip;
@@ -504,7 +1131,8 @@ function getJsonData($data = [], $tip = 'success', $code = 0) {
  * @author     assad
  * @since      2019-06-29T16:09
  */
-function getRandPro($proArr) {
+function getRandPro($proArr)
+{
     $result = '';
     //概率数组的总概率精度
     $proSum = array_sum($proArr);
@@ -518,7 +1146,6 @@ function getRandPro($proArr) {
             $proSum -= $proCur;
         }
     }
-    unset($proArr);
     return $result;
 }
 
@@ -539,7 +1166,8 @@ function getRandPro($proArr) {
  * @author     assad
  * @since      2019-07-02T17:58
  */
-function dfopen($url, $limit = 0, $post = '', $cookie = '', $ip = '', $timeout = 3, $block = 0) {
+function dfopen($url, $limit = 0, $post = '', $cookie = '', $ip = '', $timeout = 3, $block = 0)
+{
     $return = '';
     $matches = parse_url($url);
     $host = $matches['host'];
@@ -605,7 +1233,8 @@ function dfopen($url, $limit = 0, $post = '', $cookie = '', $ip = '', $timeout =
  * @param      array   $data   The data
  * @param      bool    $exit   是否退出
  */
-function echoJson($data, $exit = true) {
+function echoJson($data, $exit = true)
+{
     $jsonData = jsonEncode($data);
     header("Content-type: application/json; charset=utf-8");
     echo $jsonData;
@@ -623,7 +1252,8 @@ function echoJson($data, $exit = true) {
  * @author     assad
  * @since      2019-11-11T17:16
  */
-function getCharset() {
+function getCharset()
+{
     return '0123456789abcdefghijklmnopqrstuvwxyz-';
 }
 
@@ -634,7 +1264,8 @@ function getCharset() {
  *
  * @return     <type>  The web root.
  */
-function getWebRoot($full = false) {
+function getWebRoot($full = false)
+{
     $path = $_SERVER['SCRIPT_NAME'];
 
     if (PHP_SAPI == 'cli') {
@@ -665,7 +1296,8 @@ function getWebRoot($full = false) {
  * @author     assad
  * @since      2019-06-29T16:08
  */
-function getRemoteFileSize($url) {
+function getRemoteFileSize($url)
+{
     $url = parse_url($url);
     if ($fp = @dfopen($url['host'], empty($url['port']) ? 80 : $url['port'], $error)) {
         fputs($fp, "GET " . (empty($url['path']) ? '/' : $url['path']) . " HTTP/1.1\r\n");
@@ -678,9 +1310,9 @@ function getRemoteFileSize($url) {
                 return trim($arr[1]);
             }
         }
-        return FALSE;
+        return false;
     } else {
-        return FALSE;
+        return false;
     }
 }
 
@@ -689,7 +1321,8 @@ function getRemoteFileSize($url) {
  *
  * @return     string  The url.
  */
-function getCurrentPageUrl() {
+function getCurrentPageUrl()
+{
     $sys_protocal = isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == '443' ? 'https://' : 'http://';
     $php_self = $_SERVER['PHP_SELF'] ? safeReplace($_SERVER['PHP_SELF']) : safeReplace($_SERVER['SCRIPT_NAME']);
     $path_info = isset($_SERVER['PATH_INFO']) ? safeReplace($_SERVER['PATH_INFO']) : '';
@@ -709,7 +1342,8 @@ function getCurrentPageUrl() {
  * @author     assad
  * @since      2019-08-05T11:26
  */
-function getDistance($location1, $location2, $unitType = 1, $decimal = 2) {
+function getDistance($location1, $location2, $unitType = 1, $decimal = 2)
+{
 
     if (!$location1 || !$location2) {
         return 0;
@@ -719,7 +1353,7 @@ function getDistance($location1, $location2, $unitType = 1, $decimal = 2) {
     list($longitude2, $latitude2) = explode(",", $location2);
 
     $EARTH_RADIUS = 6370.996; // 地球半径系数
-    $PI = 3.1415926;
+    $PI = M_PI;
 
     $radLat1 = $latitude1 * $PI / 180.0;
     $radLat2 = $latitude2 * $PI / 180.0;
@@ -748,7 +1382,8 @@ function getDistance($location1, $location2, $unitType = 1, $decimal = 2) {
  *
  * @return     string
  */
-function genRandomStr($tokenLen = 60) {
+function genRandomStr($tokenLen = 60)
+{
     if (file_exists('/dev/urandom')) {
         $randomData = file_get_contents('/dev/urandom', false, null, 0, 100) . uniqid(mt_rand(), true);
     } else {
@@ -768,27 +1403,28 @@ function genRandomStr($tokenLen = 60) {
  * @author     assad
  * @since      2019-09-26T18:00
  */
-function getTimeRange($range = 1) {
+function getTimeRange($range = 1)
+{
     $startTime = 0;
     $endTime = time();
     $year = date('Y');
     $month = date('m');
 
     switch ($range) {
-    case 1: //最近7日
-        $startTime = strtotime('- 7 days');
-        break;
-    case 2: //本月
-        $t = date('t');
-        $startTime = mktime(0, 0, 0, $month, 1, $year);
-        $endTime = mktime(23, 59, 59, $month, $t, $year);
-        break;
-    case 3: //最近半年
-        $startTime = strtotime('- 180 days');
-        break;
-    default:
-        // code...
-        break;
+        case 1: //最近7日
+            $startTime = strtotime('- 7 days');
+            break;
+        case 2: //本月
+            $t = date('t');
+            $startTime = mktime(0, 0, 0, $month, 1, $year);
+            $endTime = mktime(23, 59, 59, $month, $t, $year);
+            break;
+        case 3: //最近半年
+            $startTime = strtotime('- 180 days');
+            break;
+        default:
+            // code...
+            break;
     }
     return ['start' => $startTime, 'end' => $endTime];
 }
@@ -802,35 +1438,36 @@ function getTimeRange($range = 1) {
  * @author     assad
  * @since      2019-09-19T10:34
  */
-function getRangeTimestamp($type) {
+function getRangeTimestamp($type)
+{
     switch ($type) {
-    case 1: //今日
-        $startTime = mktime(0, 0, 0, date('m'), date('d'), date('Y'));
-        $endTime = mktime(0, 0, 0, date('m'), date('d') + 1, date('Y')) - 1;
-        break;
-    case 2: //昨日
-        $startTime = mktime(0, 0, 0, date('m'), date('d') - 1, date('Y'));
-        $endTime = mktime(0, 0, 0, date('m'), date('d'), date('Y')) - 1;
-        break;
-    case 3: //本周
-        $startTime = mktime(0, 0, 0, date('m'), date('d') - date('w') + 1, date('y'));
-        $endTime = time();
-        break;
-    case 4: //上周
-        $startTime = mktime(0, 0, 0, date('m'), date('d') - date('w') + 1 - 7, date('Y'));
-        $endTime = mktime(23, 59, 59, date('m'), date('d') - date('w') + 7 - 7, date('Y'));
-        break;
-    case 5: //本月
-        $startTime = mktime(0, 0, 0, date('m'), 1, date('Y'));
-        $endTime = mktime(23, 59, 59, date('m'), date('t'), date('Y'));
-        break;
-    case 6: //上月
-        $startTime = strtotime(date('Y-m-01 00:00:00', strtotime('-1 month')));
-        $endTime = strtotime(date("Y-m-d 23:59:59", strtotime(-date('d') . 'day')));
-        break;
-    default:
-        // code...
-        break;
+        case 1: //今日
+            $startTime = mktime(0, 0, 0, date('m'), date('d'), date('Y'));
+            $endTime = mktime(0, 0, 0, date('m'), date('d') + 1, date('Y')) - 1;
+            break;
+        case 2: //昨日
+            $startTime = mktime(0, 0, 0, date('m'), date('d') - 1, date('Y'));
+            $endTime = mktime(0, 0, 0, date('m'), date('d'), date('Y')) - 1;
+            break;
+        case 3: //本周
+            $startTime = mktime(0, 0, 0, date('m'), date('d') - date('w') + 1, date('y'));
+            $endTime = time();
+            break;
+        case 4: //上周
+            $startTime = mktime(0, 0, 0, date('m'), date('d') - date('w') + 1 - 7, date('Y'));
+            $endTime = mktime(23, 59, 59, date('m'), date('d') - date('w') + 7 - 7, date('Y'));
+            break;
+        case 5: //本月
+            $startTime = mktime(0, 0, 0, date('m'), 1, date('Y'));
+            $endTime = mktime(23, 59, 59, date('m'), date('t'), date('Y'));
+            break;
+        case 6: //上月
+            $startTime = strtotime(date('Y-m-01 00:00:00', strtotime('-1 month')));
+            $endTime = strtotime(date("Y-m-d 23:59:59", strtotime(-date('d') . 'day')));
+            break;
+        default:
+            // code...
+            break;
     }
     return [$startTime, $endTime];
 }
@@ -844,7 +1481,8 @@ function getRangeTimestamp($type) {
  *
  * @return     array   The json data.
  */
-function getResponseData($data = [], $tip = 'success', $code = 0) {
+function getResponseData($data = [], $tip = 'success', $code = 0)
+{
     $responseData = [];
     $responseData['code'] = $code;
     $responseData['msg'] = $tip;
@@ -865,7 +1503,8 @@ function getResponseData($data = [], $tip = 'success', $code = 0) {
  * @author     assad
  * @since      2019-07-29T16:58
  */
-function hidePhoneNumber($cellphone) {
+function hidePhoneNumber($cellphone)
+{
     return substr($cellphone, 0, 3) . '****' . substr($cellphone, 7, 11);
 }
 
@@ -880,7 +1519,8 @@ function hidePhoneNumber($cellphone) {
  * @author     assad
  * @since      2019-07-09T16:27
  */
-function jump($uri = '', $method = 'auto', $code = NULL) {
+function jump($uri = '', $method = 'auto', $code = null)
+{
     if (!filter_var($uri, FILTER_VALIDATE_URL)) {
         $url = baseUrl();
         if ($uri != '/') {
@@ -888,25 +1528,25 @@ function jump($uri = '', $method = 'auto', $code = NULL) {
         }
     }
     // IIS environment likely? Use 'refresh' for better compatibility
-    if ($method === 'auto' && isset($_SERVER['SERVER_SOFTWARE']) && strpos($_SERVER['SERVER_SOFTWARE'], 'Microsoft-IIS') !== FALSE) {
+    if ($method === 'auto' && isset($_SERVER['SERVER_SOFTWARE']) && strpos($_SERVER['SERVER_SOFTWARE'], 'Microsoft-IIS') !== false) {
         $method = 'refresh';
-    } elseif ($method !== 'refresh' && (empty($code) OR !is_numeric($code))) {
+    } elseif ($method !== 'refresh' && (empty($code) or !is_numeric($code))) {
         if (isset($_SERVER['SERVER_PROTOCOL'], $_SERVER['REQUEST_METHOD']) && $_SERVER['SERVER_PROTOCOL'] === 'HTTP/1.1') {
             $code = ($_SERVER['REQUEST_METHOD'] !== 'GET')
             ? 303// reference: http://en.wikipedia.org/wiki/Post/Redirect/Get
-             : 307;
+            : 307;
         } else {
             $code = 302;
         }
     }
 
     switch ($method) {
-    case 'refresh':
-        header('Refresh:0;url=' . $uri);
-        break;
-    default:
-        header('Location: ' . $uri, TRUE, $code);
-        break;
+        case 'refresh':
+            header('Refresh:0;url=' . $uri);
+            break;
+        default:
+            header('Location: ' . $uri, true, $code);
+            break;
     }
     exit;
 }
@@ -922,7 +1562,8 @@ function jump($uri = '', $method = 'auto', $code = NULL) {
  * @author     assad
  * @since      2019-09-26T18:03
  */
-function jsonEncode($array = [], $numberCheck = 0) {
+function jsonEncode($array = [], $numberCheck = 0)
+{
     if ($numberCheck) {
         $jsonNumericCheck = JSON_NUMERIC_CHECK;
     } else {
@@ -942,7 +1583,8 @@ function jsonEncode($array = [], $numberCheck = 0) {
  * @author     assad
  * @since      2019-11-11T17:18
  */
-function intToString($num) {
+function intToString($num)
+{
     $chars = getCharset();
     $string = '';
     $len = strlen($chars);
@@ -962,7 +1604,8 @@ function intToString($num) {
  *
  * @return     boolean  True if email, False otherwise.
  */
-function isEmail($email) {
+function isEmail($email)
+{
     return strlen($email) > 6 && strlen($email) <= 32 && preg_match("/^([A-Za-z0-9\-_.+]+)@([A-Za-z0-9\-]+[.][A-Za-z0-9\-.]+)$/", $email);
 }
 
@@ -973,7 +1616,8 @@ function isEmail($email) {
  *
  * @return     boolean  True if utf 8, False otherwise.
  */
-function isUtf8($string) {
+function isUtf8($string)
+{
     return preg_match('%^(?:
                     [\x09\x0A\x0D\x20-\x7E] # ASCII
                     | [\xC2-\xDF][\x80-\xBF] # non-overlong 2-byte
@@ -991,7 +1635,10 @@ function isUtf8($string) {
  *
  * @return     string  IP地址
  */
-function ip() {
+function ip()
+{
+    $ip = '';
+
     if (getenv('HTTP_CLIENT_IP') && strcasecmp(getenv('HTTP_CLIENT_IP'), 'unknown')) {
         $ip = getenv('HTTP_CLIENT_IP');
     } elseif (getenv('HTTP_X_FORWARDED_FOR') && strcasecmp(getenv('HTTP_X_FORWARDED_FOR'), 'unknown')) {
@@ -1001,6 +1648,18 @@ function ip() {
     } elseif (isset($_SERVER['REMOTE_ADDR']) && $_SERVER['REMOTE_ADDR'] && strcasecmp($_SERVER['REMOTE_ADDR'], 'unknown')) {
         $ip = $_SERVER['REMOTE_ADDR'];
     }
+
+    if (strpos($ip, ',') !== false) {
+        $ipList = explode(',', $ip);
+        foreach ($ipList as $candidate) {
+            $candidate = trim($candidate);
+            if ($candidate !== '' && validIp($candidate)) {
+                return $candidate;
+            }
+        }
+        $ip = trim($ipList[0]);
+    }
+
     return preg_match('/[\d\.]{7,15}/', $ip, $matches) ? $matches[0] : '';
 }
 
@@ -1012,7 +1671,8 @@ function ip() {
  *
  * @return     bool    True if allowed ip, False otherwise.
  */
-function isAllowedIp($ip, array $whitelist = []) {
+function isAllowedIp($ip, array $whitelist = [])
+{
     $ip = (string) $ip;
     if (in_array($ip, $whitelist, true)) {
         return true;
@@ -1035,7 +1695,8 @@ function isAllowedIp($ip, array $whitelist = []) {
  *
  * @return     flaot
  */
-function microtimeFloat() {
+function microtimeFloat()
+{
     list($usec, $sec) = explode(" ", microtime());
     return ((float) $usec + (float) $sec);
 }
@@ -1048,16 +1709,33 @@ function microtimeFloat() {
  *
  * @return     boolean  ( 是否创建成功 )
  */
-function rMkdir($pathname, $mode = 0777) {
+function rMkdir($pathname, $mode = 0777)
+{
+    if (!$pathname) {
+        return false;
+    }
     if (strpos($pathname, '..') !== false) {
         return false;
     }
-    $pathname = rtrim(preg_replace(array('/\\{1,}/', '/\/{2,}/'), '/', $pathname), '/');
+
+    $pathname = str_replace('\\', '/', $pathname);
+    $pathname = preg_replace('#/+#', '/', $pathname);
+    $pathname = rtrim($pathname, '/');
+    if (preg_match('/^[A-Za-z]:$/', $pathname)) {
+        $pathname .= '/';
+    }
     if (is_dir($pathname)) {
         return true;
     }
 
-    is_dir(dirname($pathname)) || rMkdir(dirname($pathname), $mode);
+    $parent = dirname($pathname);
+    if ($parent === $pathname) {
+        return false;
+    }
+    if (!is_dir($parent) && !rMkdir($parent, $mode)) {
+        return false;
+    }
+
     return is_dir($pathname) || @mkdir($pathname, $mode);
 }
 
@@ -1073,22 +1751,19 @@ function rMkdir($pathname, $mode = 0777) {
  * @author     assad
  * @since      2021-04-09T16:06
  */
-function monthArrList($startTimeStamp, $endTimeStamp) {
+function monthArrList($startTimeStamp, $endTimeStamp)
+{
     if (!is_numeric($startTimeStamp) || !is_numeric($endTimeStamp) || ($endTimeStamp <= $startTimeStamp)) {
         return [];
     }
-    $start = date('Y-m', $startTimeStamp);
-    $end = date('Y-m', $endTimeStamp);
+    $start = strtotime(date('Y-m-01', $startTimeStamp));
+    $end = strtotime(date('Y-m-01', $endTimeStamp));
     //转为时间戳
-    $start = strtotime($start . '-01');
-    $end = strtotime($end . '-01');
-    $i = 0;
     $d = [];
     while ($start <= $end) {
         //这里累加每个月的的总秒数 计算公式：上一月1号的时间戳秒数减去当前月的时间戳秒数
-        $d[$i] = trim(date('Ym', $start), ' ');
-        $start += strtotime('+1 month', $start) - $start;
-        $i++;
+        $d[] = date('Ym', $start);
+        $start = strtotime('+1 month', $start);
     }
     return $d;
 }
@@ -1108,22 +1783,33 @@ function monthArrList($startTimeStamp, $endTimeStamp) {
  * @author     assad
  * @since      2019-06-29T16:10
  */
-function multiArraySort($multi_array, $sort_key, $sort = SORT_DESC, $sort_key1 = '', $sort1 = SORT_DESC) {
-    if (is_array($multi_array)) {
-        foreach ($multi_array as $row_array) {
-            if (is_array($row_array)) {
-                $key_array[] = $row_array[$sort_key];
-                if ($sort_key1) {
-                    $key_array1[] = $row_array[$sort_key1];
-                }
-            } else {
-                return FALSE;
-            }
-        }
-    } else {
-        return FALSE;
+function multiArraySort($multi_array, $sort_key, $sort = SORT_DESC, $sort_key1 = '', $sort1 = SORT_DESC)
+{
+    if (!is_array($multi_array)) {
+        return false;
     }
-    if ($key_array1) {
+
+    $key_array = [];
+    $key_array1 = [];
+    foreach ($multi_array as $row_array) {
+        if (!is_array($row_array) || !array_key_exists($sort_key, $row_array)) {
+            return false;
+        }
+
+        $key_array[] = $row_array[$sort_key];
+        if ($sort_key1 !== '') {
+            if (!array_key_exists($sort_key1, $row_array)) {
+                return false;
+            }
+            $key_array1[] = $row_array[$sort_key1];
+        }
+    }
+
+    if (empty($key_array)) {
+        return $multi_array;
+    }
+
+    if (!empty($key_array1)) {
         array_multisort($key_array, $sort, SORT_NUMERIC, $key_array1, $sort1, SORT_NUMERIC, $multi_array);
     } else {
         array_multisort($key_array, $sort, SORT_NUMERIC, $multi_array);
@@ -1142,7 +1828,8 @@ function multiArraySort($multi_array, $sort_key, $sort = SORT_DESC, $sort_key1 =
  * @author     assad
  * @since      2019-07-27T10:23
  */
-function outPutJson($data = [], $msg = 'success', $code = 0) {
+function outPutJson($data = [], $msg = 'success', $code = 0)
+{
     $data = getResponseData($data, $msg, $code);
     $jsonData = jsonEncode($data);
     header("Content-type: application/json; charset=utf-8");
@@ -1158,15 +1845,27 @@ function outPutJson($data = [], $msg = 'success', $code = 0) {
  *
  * @return     string
  */
-function random($length, $numeric = 0) {
-    $seed = base_convert(md5(microtime() . $_SERVER['DOCUMENT_ROOT']), 16, $numeric ? 10 : 35);
+function random($length, $numeric = 0)
+{
+    $length = (int) $length;
+    if ($length <= 0) {
+        return '';
+    }
+
+    $documentRoot = isset($_SERVER['DOCUMENT_ROOT']) ? $_SERVER['DOCUMENT_ROOT'] : '';
+    $seed = base_convert(md5(microtime() . $documentRoot . uniqid('', true)), 16, $numeric ? 10 : 35);
     $seed = $numeric ? (str_replace('0', '', $seed) . '012340567890') : ($seed . 'zZ' . strtoupper($seed));
     if ($numeric) {
         $hash = '';
     } else {
-        $hash = chr(rand(1, 26) + rand(0, 1) * 32 + 64);
+        $hash = chr(mt_rand(1, 26) + mt_rand(0, 1) * 32 + 64);
         $length--;
     }
+
+    if ($length <= 0) {
+        return $hash;
+    }
+
     $max = strlen($seed) - 1;
     for ($i = 0; $i < $length; $i++) {
         $hash .= $seed[mt_rand(0, $max)];
@@ -1181,7 +1880,8 @@ function random($length, $numeric = 0) {
  *
  * @return     <type>  ( description_of_the_return_value )
  */
-function removeUTF8Bom($string) {
+function removeUTF8Bom($string)
+{
     if (substr($string, 0, 3) == pack('CCC', 239, 187, 191)) {
         return substr($string, 3);
     }
@@ -1198,7 +1898,8 @@ function removeUTF8Bom($string) {
  *
  * @return     string   返回加密或者解决的字符串，加密结果为base64
  */
-function RC4($string, $operation = 'DECODE', $key = 'ci', $expiry = 0) {
+function RC4($string, $operation = 'DECODE', $key = 'ci', $expiry = 0)
+{
     $ckey_length = 4;
     $keya = md5(substr($key, 0, 16));
     $keyb = md5(substr($key, 16, 16));
@@ -1213,7 +1914,7 @@ function RC4($string, $operation = 'DECODE', $key = 'ci', $expiry = 0) {
     $result = '';
     $box = range(0, 255);
 
-    $rndkey = array();
+    $rndkey = [];
     for ($i = 0; $i <= 255; $i++) {
         $rndkey[$i] = ord($cryptkey[$i % $key_length]);
     }
@@ -1250,7 +1951,8 @@ function RC4($string, $operation = 'DECODE', $key = 'ci', $expiry = 0) {
  *
  * @param      string  $cmd    要执行的命令
  */
-function rumcmdnowait($cmd) {
+function rumcmdnowait($cmd)
+{
     pclose(popen($cmd, 'r'));
 }
 
@@ -1259,7 +1961,8 @@ function rumcmdnowait($cmd) {
  *
  * @param      string  $cmd    要执行的命令
  */
-function rumcmd($cmd) {
+function rumcmd($cmd)
+{
     passthru($cmd);
 }
 
@@ -1276,7 +1979,8 @@ function rumcmd($cmd) {
  * @author     assad
  * @since      2019-07-27T10:24
  */
-function randomDecimals($min, $max, $decimals = 2) {
+function randomDecimals($min, $max, $decimals = 2)
+{
     $scale = pow(10, $decimals);
     return mt_rand($min * $scale, $max * $scale) / $scale;
 }
@@ -1294,7 +1998,8 @@ function randomDecimals($min, $max, $decimals = 2) {
  * @author     assad
  * @since      2019-11-12T23:36
  */
-function runSerialize($str, $array = [], $i = 1) {
+function runSerialize($str, $array = [], $i = 1)
+{
     $str = explode("\n$i\n", $str);
     foreach ($str as $key => $value) {
         $k = substr($value, 0, strpos($value, "\t"));
@@ -1323,7 +2028,8 @@ function runSerialize($str, $array = [], $i = 1) {
  * @author     assad
  * @since      2019-11-12T23:37
  */
-function rarray($array, $string) {
+function rarray($array, $string)
+{
     $k = substr($string, 0, strpos($string, "\t"));
     $v = substr($string, strpos($string, "\t") + 1);
     if (strpos($v, "\t") !== false) {
@@ -1347,7 +2053,8 @@ function rarray($array, $string) {
  * @author     assad
  * @since      2019-11-12T23:38
  */
-function rserialize($array = [], $ret = '', $i = 1) {
+function rserialize($array = [], $ret = '', $i = 1)
+{
     if (!is_array($array)) {
         return null;
     }
@@ -1376,17 +2083,23 @@ function rserialize($array = [], $ret = '', $i = 1) {
  *
  * @return     bool    ( description_of_the_return_value )
  */
-function xsubstr($string, $length, $append = '') {
-    $rawString = $string;
-
-    if (function_exists('mb_substr')) {
-        $string = mb_substr($string, 0, $length, 'utf-8');
+function xsubstr($string, $length, $append = '')
+{
+    $length = (int) $length;
+    if ($length <= 0) {
+        return '';
     }
 
-    preg_match_all("/./su", $string, $data);
+    $rawString = (string) $string;
+    if (function_exists('mb_substr') && function_exists('mb_strlen')) {
+        $string = mb_substr($rawString, 0, $length, 'utf-8');
+        return mb_strlen($rawString, 'utf-8') > $length ? $string . $append : $string;
+    }
+
+    preg_match_all("/./su", $rawString, $data);
     $string = join("", array_slice($data[0], 0, $length));
 
-    return ($string != $rawString) ? $string . $append : $string;
+    return count($data[0]) > $length ? $string . $append : $string;
 }
 
 /**
@@ -1400,7 +2113,8 @@ function xsubstr($string, $length, $append = '') {
  * @author     assad
  * @since      2019-11-11T17:17
  */
-function stringToInt($string) {
+function stringToInt($string)
+{
     $chars = getCharset();
     $integer = 0;
     $string = strrev($string);
@@ -1421,7 +2135,8 @@ function stringToInt($string) {
  *
  * @return     string  得到安全的URL
  */
-function scUrlEncode($url) {
+function scUrlEncode($url)
+{
     static $fix = ['%21', '%2A', '%3B', '%3A', '%40', '%26', '%3D', '%2B', '%24', '%2C', '%2F', '%3F', '%25', '%23', '%5B', '%5D'];
     static $replacements = ['!', '*', ';', ":", "@", "&", "=", "+", "$", ",", "/", "?", "%", "#", "[", "]"];
     return str_replace($fix, $replacements, urlencode($url));
@@ -1435,7 +2150,8 @@ function scUrlEncode($url) {
  *
  * @return     boolean  ( description_of_the_return_value )
  */
-function sendLog($string, $saveDir = 'sendlog', $t = 'day') {
+function sendLog($string, $saveDir = 'sendlog', $t = 'day')
+{
     $saveBaseDir = '';
     if (defined('DATA_PATH')) {
         $saveBaseDir = DATA_PATH . '/logs/';
@@ -1453,13 +2169,14 @@ function sendLog($string, $saveDir = 'sendlog', $t = 'day') {
         $string = jsonEncode($string);
     }
     $timestamp = time();
+    $fileName = $saveBaseDir . $saveDir . '/log.log';
     if ($t == 'day') {
         $f = date('Ymd', $timestamp);
         $fileName = $saveBaseDir . $saveDir . '/' . $f . '.log';
     }
     $logTime = date('Y/m/d H:i:s', $timestamp);
     $record = $logTime . ' - ' . $string . "\n";
-    writeLog($fileName, $record, 'ab');
+    return writeLog($fileName, $record, 'ab');
 }
 
 /**
@@ -1469,7 +2186,8 @@ function sendLog($string, $saveDir = 'sendlog', $t = 'day') {
  *
  * @return     string  返回安全的字符串
  */
-function safeReplace($string) {
+function safeReplace($string)
+{
     $search = ['%20', '%27', '%2527', '*', '"', "'", '"', ';', '<', '>', "{", '}', '\\'];
     $replace = ['', '', '', '', '&quot;', '', '', '', '&lt;', '&gt;', '', '', ''];
     $string = str_replace($search, $replace, $string);
@@ -1487,7 +2205,8 @@ function safeReplace($string) {
  * @author     assad
  * @since      2019-08-17T16:30
  */
-function urlencode4js($string) {
+function urlencode4js($string)
+{
     $fix = ['%27', '%21', '%2A', '%28', '%29'];
     $replacements = ["'", '!', '*', '(', ')'];
     return str_replace($fix, $replacements, rawurlencode($string));
@@ -1504,7 +2223,8 @@ function urlencode4js($string) {
  * @author     assad
  * @since      2019-11-12T23:38
  */
-function validIp($ip) {
+function validIp($ip)
+{
     if (strtolower($ip) === 'unknown') {
         return false;
     }
@@ -1551,7 +2271,8 @@ function validIp($ip) {
  *
  * @return     boolean
  */
-function writeLog($fileName, $data, $method = 'wb+', $ifLock = 1, $check = 1, $chmod = 1) {
+function writeLog($fileName, $data, $method = 'wb+', $ifLock = 1, $check = 1, $chmod = 1)
+{
     if (!$fileName) {
         return false;
     }
@@ -1561,8 +2282,7 @@ function writeLog($fileName, $data, $method = 'wb+', $ifLock = 1, $check = 1, $c
     if (!is_dir(dirname($fileName)) && !rMkdir(dirname($fileName), 0777)) {
         return false;
     }
-    $ret = writeFile($fileName, $data, $method, $ifLock, $chmod);
-    return $ret;
+    return writeFile($fileName, $data, $method, $ifLock, $chmod);
 }
 
 /**
@@ -1576,23 +2296,39 @@ function writeLog($fileName, $data, $method = 'wb+', $ifLock = 1, $check = 1, $c
  *
  * @return     boolean
  */
-function writeFile($filePath, $data, $method = 'wb+', $ifLock = 1, $chmod = 1) {
-    if (($handle = fopen($filePath, $method)) == false) {
+function writeFile($filePath, $data, $method = 'wb+', $ifLock = 1, $chmod = 1)
+{
+    if (is_array($data) || is_object($data)) {
+        $data = print_r($data, true);
+    } else {
+        $data = (string) $data;
+    }
+
+    $handle = @fopen($filePath, $method);
+    if ($handle == false) {
         return false;
     }
+
+    $locked = false;
     if ($ifLock) {
-        flock($handle, LOCK_EX);
+        $locked = flock($handle, LOCK_EX);
     }
     if (fwrite($handle, $data) === false) {
+        if ($locked) {
+            flock($handle, LOCK_UN);
+        }
+        fclose($handle);
         return false;
     }
     if ($method == "wb+") {
         ftruncate($handle, strlen($data));
     }
-    if ($ifLock) {
+    if ($locked) {
         flock($handle, LOCK_UN);
     }
     fclose($handle);
-    $chmod && @chmod($filename, 0777);
+    if ($chmod) {
+        @chmod($filePath, 0777);
+    }
     return true;
 }
