@@ -897,7 +897,7 @@ HTML;
             <div class="dumpx-meta-value">{$safeLine}</div>
         </div>
         <div class="dumpx-body">
-            <div class="dumpx-corner">PHP DEBUG PANEL</div>
+            <div class="dumpx-corner">PHP DEBUG PANEL BY YEE</div>
             <pre class="dumpx-pre"><code>{$safeBody}</code></pre>
         </div>
     </div>
@@ -929,12 +929,25 @@ if (!function_exists('dumpx_render_web')) {
 /**
  * 打印变量，会终止程序运行
  *
- * @param      mixed    $var    调试的信息
+ * @param      mixed    $data    调试的信息
+ * @param      string   $title   标题
  * @param      boolean  $isExit 是否终止程序
  */
-function debug($var = null, $isExit = true)
+function debug($data = null, $title = '', $isExit = true)
 {
-    dumpx($var, 'DEBUG', $isExit);
+    $caller = dumpx_get_caller();
+    $time = date('Y-m-d H:i:s');
+    $type = dumpx_get_type($data);
+    $body = dumpx_format_value($data);
+
+    if (dumpx_is_cli()) {
+        echo dumpx_render_cli($body, $title, $type, $caller['file'], $caller['line'], $time);
+    } else {
+        echo dumpx_render_web($body, $title, $type, $caller['file'], $caller['line'], $time);
+    }
+    if ($isExit) {
+        exit(1);
+    }
 }
 
 /**
