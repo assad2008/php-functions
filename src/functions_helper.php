@@ -34,8 +34,8 @@ function baseUrl($atRoot = false, $atCore = false, $parse = false)
 
         $core = '';
         $documentRoot = isset($_SERVER['DOCUMENT_ROOT']) ? $_SERVER['DOCUMENT_ROOT'] : '';
-        $currentDir = realpath(dirname(__FILE__));
-        if ($documentRoot !== '' && $currentDir !== false) {
+        $currentDir = __DIR__;
+        if ($documentRoot !== '' && $currentDir !== '') {
             $coreList = preg_split('@/@', str_replace($documentRoot, '', $currentDir), null, PREG_SPLIT_NO_EMPTY);
             if (!empty($coreList)) {
                 $core = $coreList[0];
@@ -257,11 +257,13 @@ function ciAddslashes($string, $force = 1)
  *
  * @return     array|string    ( description_of_the_return_value )
  */
-function ciGmdate($timestamp = "", $format = "Y-n-d H:i", $convert = 1)
+function ciGmdate($timestamp = "", $format = "Y-n-d H:i", $convert = 1, $timeoffset = null)
 {
-    global $timeoffset;
-    $todaytime = strtotime("today");
+    if ($timeoffset === null) {
+        $timeoffset = isset($GLOBALS['timeoffset']) ? $GLOBALS['timeoffset'] : 0;
+    }
     $timeoffset = $timeoffset ? $timeoffset : 8;
+    $todaytime = strtotime("today");
     $timeformat = 'H:i';
     $s = gmdate($format, $timestamp + $timeoffset * 3600);
     if (!$convert) {
@@ -319,637 +321,6 @@ function ciGmdate($timestamp = "", $format = "Y-n-d H:i", $convert = 1)
     }
 }
 
-if (!function_exists('dumpx')) {
-    /**
-     * 优雅打印变量，支持 Web / CLI
-     *
-     * @param mixed       $data    要打印的数据
-     * @param string|null $title   标题
-     * @param bool        $exit    是否打印后终止
-     * @return void
-     */
-    function dumpx($data, $title = null, $exit = true)
-    {
-        $caller = dumpx_get_caller();
-        $time = date('Y-m-d H:i:s');
-        $type = dumpx_get_type($data);
-        $body = dumpx_format_value($data);
-
-        if (dumpx_is_cli()) {
-            echo dumpx_render_cli($body, $title, $type, $caller['file'], $caller['line'], $time);
-        } else {
-            echo dumpx_render_web($body, $title, $type, $caller['file'], $caller['line'], $time);
-        }
-
-        if ($exit) {
-            exit(1);
-        }
-    }
-}
-
-if (!function_exists('ddx')) {
-    /**
-     * 打印并终止
-     *
-     * @param mixed       $data
-     * @param string|null $title
-     * @return void
-     */
-    function ddx($data, $title = null)
-    {
-        dumpx($data, $title, true);
-    }
-}
-
-if (!function_exists('dumpx_is_cli')) {
-    /**
-     * 鍒ゆ柇鏄惁涓?CLI鐜
-     *
-     * @return bool
-     */
-    function dumpx_is_cli()
-    {
-        return PHP_SAPI === 'cli' || PHP_SAPI === 'phpdbg';
-    }
-}
-
-if (!function_exists('dumpx_get_caller')) {
-    /**
-     * 鑾峰彇璋冪敤浣嶇疆
-     *
-     * @return array
-     */
-    function dumpx_get_caller()
-    {
-        $trace = debug_backtrace();
-        $caller = [
-            'file' => '[internal]',
-            'line' => 0,
-        ];
-
-        if (isset($trace[1])) {
-            if (isset($trace[1]['file'])) {
-                $caller['file'] = $trace[1]['file'];
-            }
-            if (isset($trace[1]['line'])) {
-                $caller['line'] = (int) $trace[1]['line'];
-            }
-            return $caller;
-        }
-
-        if (isset($trace[0])) {
-            if (isset($trace[0]['file'])) {
-                $caller['file'] = $trace[0]['file'];
-            }
-            if (isset($trace[0]['line'])) {
-                $caller['line'] = (int) $trace[0]['line'];
-            }
-        }
-
-        return $caller;
-    }
-}
-
-if (!function_exists('dumpx_get_type')) {
-    /**
-     * 鍏煎浣庣増鏈?PHP鐨勭被鍨嬫弿杩?
-     *
-     * @param mixed $data
-     * @return string
-     */
-    function dumpx_get_type($data)
-    {
-        if (function_exists('get_debug_type')) {
-            return get_debug_type($data);
-        }
-
-        if (is_object($data)) {
-            return get_class($data);
-        }
-
-        if (is_array($data)) {
-            return 'array';
-        }
-
-        if (is_bool($data)) {
-            return 'bool';
-        }
-
-        if ($data === null) {
-            return 'null';
-        }
-
-        if (is_resource($data)) {
-            return 'resource (' . get_resource_type($data) . ')';
-        }
-
-        return gettype($data);
-    }
-}
-
-if (!function_exists('dumpx_format_value')) {
-    /**
-     * 格式化打印内容
-     *
-     * @param mixed $data
-     * @return string
-     */
-    function dumpx_format_value($data)
-    {
-        if (is_string($data)) {
-            return $data;
-        }
-
-        if (is_array($data) || is_object($data)) {
-            $json = dumpx_try_json($data);
-            if ($json !== null) {
-                return $json;
-            }
-        }
-
-        if (is_bool($data)) {
-            return $data ? 'true' : 'false';
-        }
-
-        if ($data === null) {
-            return 'null';
-        }
-
-        if (is_scalar($data)) {
-            return (string) $data;
-        }
-
-        if (is_resource($data)) {
-            return '[resource:' . get_resource_type($data) . ']';
-        }
-
-        return print_r($data, true);
-    }
-}
-
-if (!function_exists('dumpx_get_json_options')) {
-    /**
-     * 鏍规嵁褰撳墠PHP鐗堟湰鐢熸垚 JSON option
-     *
-     * @return int
-     */
-    function dumpx_get_json_options()
-    {
-        $constants = [
-            'JSON_PRETTY_PRINT',
-            'JSON_UNESCAPED_UNICODE',
-            'JSON_UNESCAPED_SLASHES',
-            'JSON_PARTIAL_OUTPUT_ON_ERROR',
-        ];
-        $options = 0;
-
-        foreach ($constants as $constantName) {
-            if (defined($constantName)) {
-                $options |= constant($constantName);
-            }
-        }
-
-        return $options;
-    }
-}
-
-if (!function_exists('dumpx_try_json')) {
-    /**
-     * 尝试转成漂亮 JSON
-     *
-     * @param mixed $data
-     * @return string|null
-     */
-    function dumpx_try_json($data)
-    {
-        $normalized = dumpx_normalize($data);
-        $json = json_encode($normalized, dumpx_get_json_options());
-
-        if ($json !== false) {
-            return $json;
-        }
-
-        return null;
-    }
-}
-
-if (!function_exists('dumpx_normalize')) {
-    /**
-     * 递归标准化对象/数组，避免部分对象无法直接 json_encode
-     *
-     * @param mixed $data
-     * @param int   $depth
-     * @return mixed
-     */
-    function dumpx_normalize($data, $depth = 0)
-    {
-        if ($depth > 8) {
-            return '... max depth reached ...';
-        }
-
-        if (is_array($data)) {
-            $result = [];
-            foreach ($data as $key => $value) {
-                $result[$key] = dumpx_normalize($value, $depth + 1);
-            }
-            return $result;
-        }
-
-        if (is_object($data)) {
-            if ($data instanceof JsonSerializable) {
-                try {
-                    return dumpx_normalize($data->jsonSerialize(), $depth + 1);
-                } catch (Exception $e) {
-                }
-            }
-
-            if ($data instanceof Traversable) {
-                $result = [];
-                foreach ($data as $key => $value) {
-                    $result[$key] = dumpx_normalize($value, $depth + 1);
-                }
-                return [
-                    '__class__' => get_class($data),
-                    '__data__' => $result,
-                ];
-            }
-
-            $vars = get_object_vars($data);
-
-            return [
-                '__class__' => get_class($data),
-                '__data__' => dumpx_normalize($vars, $depth + 1),
-            ];
-        }
-
-        if (is_resource($data)) {
-            return '[resource:' . get_resource_type($data) . ']';
-        }
-
-        return $data;
-    }
-}
-
-if (!function_exists('dumpx_strlen')) {
-    /**
-     * 鍏煎鎬у瓧绗︿覆闀垮害
-     *
-     * @param string $value
-     * @return int
-     */
-    function dumpx_strlen($value)
-    {
-        if (function_exists('mb_strlen')) {
-            return (int) mb_strlen($value, 'UTF-8');
-        }
-
-        return strlen($value);
-    }
-}
-
-if (!function_exists('dumpx_substr')) {
-    /**
-     * 鍏煎鎬у瓧绗︿覆鎴彇
-     *
-     * @param string   $value
-     * @param int      $start
-     * @param int|null $length
-     * @return string
-     */
-    function dumpx_substr($value, $start, $length = null)
-    {
-        if (function_exists('mb_substr')) {
-            if ($length === null) {
-                return mb_substr($value, $start, null, 'UTF-8');
-            }
-
-            return mb_substr($value, $start, $length, 'UTF-8');
-        }
-
-        if ($length === null) {
-            return substr($value, $start);
-        }
-
-        return substr($value, $start, $length);
-    }
-}
-
-if (!function_exists('dumpx_wrap_cli_lines')) {
-    /**
-     * 鎶婂瓧绗︿覆鎸夊浐瀹氬搴︽媶鍒?CLI琛?
-     *
-     * @param string $text
-     * @param int    $width
-     * @return array
-     */
-    function dumpx_wrap_cli_lines($text, $width)
-    {
-        $text = str_replace("\t", '    ', (string) $text);
-        if ($text === '') {
-            return [''];
-        }
-
-        $lines = [];
-        while (dumpx_strlen($text) > $width) {
-            $lines[] = dumpx_substr($text, 0, $width);
-            $text = dumpx_substr($text, $width);
-        }
-        $lines[] = $text;
-
-        return $lines;
-    }
-}
-
-if (!function_exists('dumpx_render_cli_row')) {
-    /**
-     * 娓叉煋涓€琛?CLI杈撳嚭
-     *
-     * @param string $text
-     * @param int    $width
-     * @param string $align
-     * @return string
-     */
-    function dumpx_render_cli_row($text, $width, $align = 'left')
-    {
-        $text = (string) $text;
-        $padding = $width - dumpx_strlen($text);
-        if ($padding < 0) {
-            $padding = 0;
-        }
-
-        if ($align === 'center') {
-            $left = (int) floor($padding / 2);
-            $right = $padding - $left;
-            return '| ' . str_repeat(' ', $left) . $text . str_repeat(' ', $right) . ' |' . PHP_EOL;
-        }
-
-        return '| ' . $text . str_repeat(' ', $padding) . ' |' . PHP_EOL;
-    }
-}
-
-if (!function_exists('dumpx_render_cli_output')) {
-    /**
-     * CLI 杈撳嚭鏂板疄鐜?
-     *
-     * @param string $body
-     * @param string $title
-     * @param string $type
-     * @param string $file
-     * @param int    $line
-     * @param string $time
-     * @return string
-     */
-    function dumpx_render_cli_output($body, $title, $type, $file, $line, $time)
-    {
-        $width = 80;
-        $contentWidth = $width - 4;
-        $label = $title ? (string) $title : 'DEBUG';
-        $border = '+' . str_repeat('-', $width - 2) . '+';
-        $output = PHP_EOL;
-
-        $output .= $border . PHP_EOL;
-        $output .= dumpx_render_cli_row($label, $contentWidth, 'center');
-        $output .= $border . PHP_EOL;
-        $output .= dumpx_render_cli_row('Type : ' . $type, $contentWidth);
-        $output .= dumpx_render_cli_row('Time : ' . $time, $contentWidth);
-        $output .= dumpx_render_cli_row('From : ' . $file . ':' . $line, $contentWidth);
-        $output .= $border . PHP_EOL;
-
-        $lines = preg_split("/\r\n|\r|\n/", rtrim((string) $body));
-        if (!$lines || empty($lines)) {
-            $lines = [''];
-        }
-
-        foreach ($lines as $lineText) {
-            $wrappedLines = dumpx_wrap_cli_lines($lineText, $contentWidth);
-            foreach ($wrappedLines as $wrappedLine) {
-                $output .= dumpx_render_cli_row($wrappedLine, $contentWidth);
-            }
-        }
-
-        $output .= $border . PHP_EOL;
-
-        return $output;
-    }
-}
-
-if (!function_exists('dumpx_render_cli')) {
-    /**
-     * CLI 渲染
-     *
-     * @param string      $body
-     * @param string|null $title
-     * @param string      $type
-     * @param string      $file
-     * @param int         $line
-     * @param string      $time
-     * @return string
-     */
-    function dumpx_render_cli($body, $title, $type, $file, $line, $time)
-    {
-        return dumpx_render_cli_output($body, $title, $type, $file, $line, $time);
-    }
-}
-
-if (!function_exists('dumpx_escape_html')) {
-    /**
-     * Web 杈撳嚭鍓嶈浆涔夊唴瀹?
-     *
-     * @param mixed $value
-     * @return string
-     */
-    function dumpx_escape_html($value)
-    {
-        return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
-    }
-}
-
-if (!function_exists('dumpx_render_web_output')) {
-    /**
-     * Web 杈撳嚭鏂板疄鐜?
-     *
-     * @param string $body
-     * @param string $title
-     * @param string $type
-     * @param string $file
-     * @param int    $line
-     * @param string $time
-     * @return string
-     */
-    function dumpx_render_web_output($body, $title, $type, $file, $line, $time)
-    {
-        static $styleInjected = false;
-        $html = '';
-
-        if (!$styleInjected) {
-            $styleInjected = true;
-
-            $html .= <<<HTML
-<style>
-.dumpx-wrap{
-    margin:16px 0;
-    font-family:Consolas,Menlo,Monaco,"Courier New",monospace;
-    max-width:100%;
-}
-.dumpx-card{
-    background:linear-gradient(145deg,#0f172a 0%,#111827 55%,#0b1220 100%);
-    color:#e5e7eb;
-    border:1px solid rgba(56,189,248,.25);
-    border-radius:14px;
-    box-shadow:0 10px 30px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.03);
-    overflow:hidden;
-}
-.dumpx-head{
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    padding:12px 16px;
-    border-bottom:1px solid rgba(148,163,184,.16);
-    background:linear-gradient(90deg,rgba(14,165,233,.08),rgba(168,85,247,.08));
-}
-.dumpx-title{
-    font-size:14px;
-    font-weight:700;
-    color:#67e8f9;
-    letter-spacing:.5px;
-}
-.dumpx-badge{
-    font-size:12px;
-    padding:3px 10px;
-    border-radius:999px;
-    background:rgba(34,197,94,.12);
-    border:1px solid rgba(34,197,94,.28);
-    color:#86efac;
-}
-.dumpx-meta{
-    display:grid;
-    grid-template-columns:90px 1fr;
-    gap:6px 12px;
-    padding:14px 16px;
-    border-bottom:1px solid rgba(148,163,184,.12);
-    font-size:13px;
-}
-.dumpx-meta-label{
-    color:#93c5fd;
-}
-.dumpx-meta-value{
-    color:#cbd5e1;
-    word-break:break-all;
-}
-.dumpx-body{
-    position:relative;
-}
-.dumpx-pre{
-    margin:0;
-    padding:16px;
-    overflow:auto;
-    line-height:1.6;
-    font-size:13px;
-    color:#e2e8f0;
-    background:
-        linear-gradient(rgba(255,255,255,.02), rgba(255,255,255,.02)),
-        repeating-linear-gradient(
-            to bottom,
-            transparent 0,
-            transparent 27px,
-            rgba(255,255,255,.025) 28px
-        );
-}
-.dumpx-pre code{
-    color:inherit;
-    white-space:pre-wrap;
-    word-break:break-word;
-}
-.dumpx-corner{
-    position:absolute;
-    top:10px;
-    right:12px;
-    font-size:11px;
-    color:rgba(148,163,184,.5);
-    user-select:none;
-}
-</style>
-HTML;
-        }
-
-        $safeTitle = dumpx_escape_html($title ? $title : 'DEBUG');
-        $safeType = dumpx_escape_html($type);
-        $safeFile = dumpx_escape_html($file);
-        $safeTime = dumpx_escape_html($time);
-        $safeBody = dumpx_escape_html($body);
-        $safeLine = dumpx_escape_html($line);
-
-        $html .= <<<HTML
-<div class="dumpx-wrap">
-    <div class="dumpx-card">
-        <div class="dumpx-head">
-            <div class="dumpx-title">{$safeTitle}</div>
-            <div class="dumpx-badge">{$safeType}</div>
-        </div>
-        <div class="dumpx-meta">
-            <div class="dumpx-meta-label">Time</div>
-            <div class="dumpx-meta-value">{$safeTime}</div>
-
-            <div class="dumpx-meta-label">File</div>
-            <div class="dumpx-meta-value">{$safeFile}</div>
-
-            <div class="dumpx-meta-label">Line</div>
-            <div class="dumpx-meta-value">{$safeLine}</div>
-        </div>
-        <div class="dumpx-body">
-            <div class="dumpx-corner">PHP DEBUG PANEL BY YEE</div>
-            <pre class="dumpx-pre"><code>{$safeBody}</code></pre>
-        </div>
-    </div>
-</div>
-HTML;
-
-        return $html;
-    }
-}
-
-if (!function_exists('dumpx_render_web')) {
-    /**
-     * Web 渲染
-     *
-     * @param string      $body
-     * @param string|null $title
-     * @param string      $type
-     * @param string      $file
-     * @param int         $line
-     * @param string      $time
-     * @return string
-     */
-    function dumpx_render_web($body, $title, $type, $file, $line, $time)
-    {
-        return dumpx_render_web_output($body, $title, $type, $file, $line, $time);
-    }
-}
-
-/**
- * 打印变量，会终止程序运行
- *
- * @param      mixed    $data    调试的信息
- * @param      string   $title   标题
- * @param      boolean  $isExit 是否终止程序
- */
-function debug($data = null, $title = '', $isExit = true)
-{
-    $caller = dumpx_get_caller();
-    $time = date('Y-m-d H:i:s');
-    $type = dumpx_get_type($data);
-    $body = dumpx_format_value($data);
-
-    if (dumpx_is_cli()) {
-        echo dumpx_render_cli($body, $title, $type, $caller['file'], $caller['line'], $time);
-    } else {
-        echo dumpx_render_web($body, $title, $type, $caller['file'], $caller['line'], $time);
-    }
-    if ($isExit) {
-        exit(1);
-    }
-}
-
 /**
  * 下载本地文件
  *
@@ -959,10 +330,14 @@ function debug($data = null, $title = '', $isExit = true)
 function downloadFile($file, $fileName = "")
 {
     $downFileName = $fileName ?: basename($file);
+    $downFileName = str_replace(["\\", "/", "\r", "\n", "\0", '"'], '', (string) $downFileName);
+    if ($downFileName === '') {
+        $downFileName = 'download';
+    }
     if (file_exists($file)) {
         header('Content-Description: File Transfer');
         header('Content-Type: application/octet-stream');
-        header('Content-Disposition: attachment; filename="' . addslashes($downFileName) . '"');
+        header('Content-Disposition: attachment; filename="' . $downFileName . '"; filename*=UTF-8\'\'' . rawurlencode($downFileName));
         header('Content-Transfer-Encoding: binary');
         header('Expires: 0');
         header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
@@ -1186,6 +561,7 @@ function dfopen($url, $limit = 0, $post = '', $cookie = '', $ip = '', $timeout =
     $host = $matches['host'];
     $path = $matches['path'] ? $matches['path'] . ($matches['query'] ? '?' . $matches['query'] : '') : '/';
     $port = !empty($matches['port']) ? $matches['port'] : 80;
+    $userAgent = isset($_SERVER['HTTP_USER_AGENT']) ? str_replace(["\r", "\n"], '', $_SERVER['HTTP_USER_AGENT']) : 'Mozilla/5.0';
 
     if ($post) {
         $out = "POST $path HTTP/1.0\r\n";
@@ -1193,7 +569,7 @@ function dfopen($url, $limit = 0, $post = '', $cookie = '', $ip = '', $timeout =
         //$out .= "Referer: $boardurl\r\n";
         $out .= "Accept-Language: zh-cn\r\n";
         $out .= "Content-Type: application/x-www-form-urlencoded\r\n";
-        $out .= "User-Agent: $_SERVER[HTTP_USER_AGENT]\r\n";
+        $out .= "User-Agent: $userAgent\r\n";
         $out .= "Host: $host\r\n";
         $out .= 'Content-Length: ' . strlen($post) . "\r\n";
         $out .= "Connection: Close\r\n";
@@ -1205,7 +581,7 @@ function dfopen($url, $limit = 0, $post = '', $cookie = '', $ip = '', $timeout =
         $out .= "Accept: */*\r\n";
         //$out .= "Referer: $boardurl\r\n";
         $out .= "Accept-Language: zh-cn\r\n";
-        $out .= "User-Agent: $_SERVER[HTTP_USER_AGENT]\r\n";
+        $out .= "User-Agent: $userAgent\r\n";
         $out .= "Host: $host\r\n";
         $out .= "Connection: Close\r\n";
         $out .= "Cookie: $cookie\r\n\r\n";
@@ -1311,22 +687,26 @@ function getWebRoot($full = false)
  */
 function getRemoteFileSize($url)
 {
-    $url = parse_url($url);
-    if ($fp = @dfopen($url['host'], empty($url['port']) ? 80 : $url['port'], $error)) {
-        fputs($fp, "GET " . (empty($url['path']) ? '/' : $url['path']) . " HTTP/1.1\r\n");
-        fputs($fp, "Host:$url[host]\r\n\r\n");
-        while (!feof($fp)) {
-            $tmp = fgets($fp);
-            if (trim($tmp) == '') {
-                break;
-            } else if (preg_match('/Content-Length:(.*)/si', $tmp, $arr)) {
-                return trim($arr[1]);
-            }
-        }
-        return false;
-    } else {
-        return false;
+    if (empty($url)) {
+        return 0;
     }
+
+    $headers = @get_headers($url, true);
+    if (empty($headers) || !is_array($headers)) {
+        return 0;
+    }
+
+    $headers = array_change_key_case($headers, CASE_LOWER);
+    if (!isset($headers['content-length'])) {
+        return 0;
+    }
+
+    $length = $headers['content-length'];
+    if (is_array($length)) {
+        $length = end($length);
+    }
+
+    return (int) $length;
 }
 
 /**
@@ -1463,7 +843,7 @@ function getRangeTimestamp($type)
             $endTime = mktime(0, 0, 0, date('m'), date('d'), date('Y')) - 1;
             break;
         case 3: //本周
-            $startTime = mktime(0, 0, 0, date('m'), date('d') - date('w') + 1, date('y'));
+            $startTime = mktime(0, 0, 0, date('m'), date('d') - date('w') + 1, date('Y'));
             $endTime = time();
             break;
         case 4: //上周
@@ -1518,7 +898,11 @@ function getResponseData($data = [], $tip = 'success', $code = 0)
  */
 function hidePhoneNumber($cellphone)
 {
-    return substr($cellphone, 0, 3) . '****' . substr($cellphone, 7, 11);
+    $cellphone = (string) $cellphone;
+    if (strlen($cellphone) < 11) {
+        return $cellphone;
+    }
+    return substr($cellphone, 0, 3) . '****' . substr($cellphone, 7, 4);
 }
 
 /**
@@ -1580,7 +964,7 @@ function jsonEncode($array = [], $numberCheck = 0)
     if ($numberCheck) {
         $jsonNumericCheck = JSON_NUMERIC_CHECK;
     } else {
-        $jsonNumericCheck = 1;
+        $jsonNumericCheck = 0;
     }
     return json_encode($array, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | $jsonNumericCheck);
 }
@@ -1601,12 +985,18 @@ function intToString($num)
     $chars = getCharset();
     $string = '';
     $len = strlen($chars);
+    $useBcmath = function_exists('bcmod') && function_exists('bcdiv');
     while ($num >= $len) {
-        $mod = bcmod($num, $len);
-        $num = bcdiv($num, $len);
+        if ($useBcmath) {
+            $mod = (int) bcmod($num, $len);
+            $num = bcdiv($num, $len);
+        } else {
+            $mod = $num % $len;
+            $num = intval($num / $len);
+        }
         $string = $chars[$mod] . $string;
     }
-    $string = $chars[$num] . $string;
+    $string = $chars[(int) $num] . $string;
     return $string;
 }
 
@@ -2019,9 +1409,9 @@ function runSerialize($str, $array = [], $i = 1)
         $v = substr($value, strpos($value, "\t") + 1);
         if (strpos($v, "\n") !== false) {
             $next = $i + 1;
-            $array[$k] = runSerialize($v, $array[$k], $next);
+            $array[$k] = runSerialize($v, isset($array[$k]) && is_array($array[$k]) ? $array[$k] : [], $next);
         } elseif (strpos($v, "\t") !== false) {
-            $array[$k] = rarray($array[$k], $v);
+            $array[$k] = rarray(isset($array[$k]) && is_array($array[$k]) ? $array[$k] : [], $v);
         } else {
             $array[$k] = $v;
         }
@@ -2043,10 +1433,13 @@ function runSerialize($str, $array = [], $i = 1)
  */
 function rarray($array, $string)
 {
+    if (!is_array($array)) {
+        $array = [];
+    }
     $k = substr($string, 0, strpos($string, "\t"));
     $v = substr($string, strpos($string, "\t") + 1);
     if (strpos($v, "\t") !== false) {
-        $array[$k] = rarray($array[$k], $v);
+        $array[$k] = rarray(isset($array[$k]) ? $array[$k] : [], $v);
     } else {
         $array[$k] = $v;
     }
@@ -2129,16 +1522,32 @@ function xsubstr($string, $length, $append = '')
 function stringToInt($string)
 {
     $chars = getCharset();
-    $integer = 0;
     $string = strrev($string);
     $baselen = strlen($chars);
     $inputlen = strlen($string);
+    $useBcmath = function_exists('bcadd') && function_exists('bcmul') && function_exists('bcpow');
+
+    if ($useBcmath) {
+        $integer = '0';
+        for ($i = 0; $i < $inputlen; $i++) {
+            $index = strpos($chars, $string[$i]);
+            if ($index === false) {
+                continue;
+            }
+            $integer = bcadd($integer, bcmul($index, bcpow($baselen, $i)));
+        }
+        return explode('.', $integer)[0];
+    }
+
+    $integer = 0;
     for ($i = 0; $i < $inputlen; $i++) {
         $index = strpos($chars, $string[$i]);
-        $integer = bcadd($integer, bcmul($index, bcpow($baselen, $i)));
+        if ($index === false) {
+            continue;
+        }
+        $integer += $index * pow($baselen, $i);
     }
-    $integer = explode('.', $integer)[0];
-    return $integer;
+    return (string) $integer;
 }
 
 /**
@@ -2243,7 +1652,7 @@ function validIp($ip)
     }
     $ip = ip2long($ip);
     if ($ip !== false && $ip !== -1) {
-        $ip = sprintf('%u', $ip);
+        $ip = (float) sprintf('%u', $ip);
         if ($ip >= 0 && $ip <= 50331647) {
             return false;
         }
