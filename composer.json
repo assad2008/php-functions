@@ -17,8 +17,7 @@
         "email": "rlk002@gmail.com"
     },
     "require": {
-        "php": "^5.4 || ^7.0 || ^8.0",
-        "godruoyi/php-snowflake": "^1.1"
+        "php": "^7.4 || ^8.0"
     },
     "autoload":{
     	"files": ["src/functions_helper.php"]

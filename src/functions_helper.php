@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/OrderSequence.php';
+
 /**
  * @Filename:  functions_helper.php
  * @Author:  assad
@@ -36,7 +38,7 @@ function baseUrl($atRoot = false, $atCore = false, $parse = false)
         $documentRoot = isset($_SERVER['DOCUMENT_ROOT']) ? $_SERVER['DOCUMENT_ROOT'] : '';
         $currentDir = __DIR__;
         if ($documentRoot !== '' && $currentDir !== '') {
-            $coreList = preg_split('@/@', str_replace($documentRoot, '', $currentDir), null, PREG_SPLIT_NO_EMPTY);
+            $coreList = preg_split('@/@', str_replace($documentRoot, '', $currentDir), -1, PREG_SPLIT_NO_EMPTY);
             if (!empty($coreList)) {
                 $core = $coreList[0];
             }
@@ -74,79 +76,52 @@ function baseUrl($atRoot = false, $atCore = false, $parse = false)
  */
 function cutStr($string, $length, $dot = '...')
 {
-    $strlen = strlen($string);
-    if ($strlen <= $length) {
+    $string = (string) $string;
+    $length = (int) $length;
+    if ($length <= 0) {
+        return '';
+    }
+    if (strlen($string) <= $length) {
         return $string;
     }
 
-    $string = str_replace(
-        [' ', '&nbsp;', '&amp;', '&quot;', '&#039;', '&ldquo;', '&rdquo;', '&mdash;', '&lt;', '&gt;', '&middot;', '&hellip;'],
-        [' ', '&', '"', "'", '“', '”', '—', '<', '>', '·', '…'],
-        $string
-    );
-
-    $strcut = '';
-    if (isUtf8($string)) {
-        $length = $length - strlen($dot);
-        $n = $tn = $noc = 0;
-        while ($n < strlen($string)) {
-            $t = ord($string[$n]);
-            if ($t == 9 || $t == 10 || (32 <= $t && $t <= 126)) {
-                $tn = 1;
-                $n++;
-                $noc++;
-            } elseif (194 <= $t && $t <= 223) {
-                $tn = 2;
-                $n += 2;
-                $noc += 2;
-            } elseif (224 <= $t && $t <= 239) {
-                $tn = 3;
-                $n += 3;
-                $noc += 2;
-            } elseif (240 <= $t && $t <= 247) {
-                $tn = 4;
-                $n += 4;
-                $noc += 2;
-            } elseif (248 <= $t && $t <= 251) {
-                $tn = 5;
-                $n += 5;
-                $noc += 2;
-            } elseif ($t == 252 || $t == 253) {
-                $tn = 6;
-                $n += 6;
-                $noc += 2;
-            } else {
-                $n++;
-            }
-            if ($noc >= $length) {
-                break;
-            }
+    $entities = [
+        '&nbsp;' => ' ', '&amp;' => '&', '&quot;' => '"', '&#039;' => "'",
+        '&ldquo;' => '“', '&rdquo;' => '”', '&mdash;' => '—', '&lt;' => '<',
+        '&gt;' => '>', '&middot;' => '·', '&hellip;' => '…',
+    ];
+    $text = strtr($string, $entities);
+    $utf8 = preg_match('//u', $text) === 1;
+    $budget = max(0, $length - strlen($dot));
+    $size = strlen($text);
+    $widthUsed = 0;
+    $cutAt = 0;
+    $offset = 0;
+    while ($offset < $size && $widthUsed <= $length) {
+        $byte = ord($text[$offset]);
+        $width = $byte < 128 ? 1 : 2;
+        $bytes = $width;
+        if ($utf8 && $byte >= 224) {
+            $bytes = $byte < 240 ? 3 : 4;
         }
-        if ($noc > $length) {
-            $n -= $tn;
+        if ($offset + $bytes > $size) {
+            break;
         }
-        $strcut = substr($string, 0, $n);
-        $strcut = str_replace(
-            ['∵', '&', '"', "'", '“', '”', '—', '<', '>', '·', '…'],
-            [' ', '&amp;', '&quot;', '&#039;', '&ldquo;', '&rdquo;', '&mdash;', '&lt;', '&gt;', '&middot;', '&hellip;'],
-            $strcut);
-    } else {
-        $dotlen = strlen($dot);
-        $maxi = $length - $dotlen - 1;
-        $current_str = '';
-        $search_arr = ['&', ' ', '"', "'", '“', '”', '—', '<', '>', '·', '…', '∵'];
-        $replace_arr = ['&amp;', '&nbsp;', '&quot;', '&#039;', '&ldquo;', '&rdquo;', '&mdash;', '&lt;', '&gt;', '&middot;', '&hellip;', ' '];
-        $search_flip = array_flip($search_arr);
-        for ($i = 0; $i < $maxi; $i++) {
-            $current_str = ord($string[$i]) > 127 ? $string[$i] . $string[++$i] : $string[$i];
-            if (in_array($current_str, $search_arr)) {
-                $key = $search_flip[$current_str];
-                $current_str = str_replace($search_arr[$key], $replace_arr[$key], $current_str);
-            }
-            $strcut .= $current_str;
+        $offset += $bytes;
+        $widthUsed += $width;
+        if ($widthUsed <= $budget) {
+            $cutAt = $offset;
         }
     }
-    return $strcut . $dot;
+    if ($offset === $size && $widthUsed <= $length) {
+        return $string;
+    }
+
+    $escape = array_flip($entities);
+    if ($utf8) {
+        unset($escape[' ']);
+    }
+    return strtr(substr($text, 0, $cutAt), $escape) . $dot;
 }
 
 /**
@@ -160,42 +135,27 @@ function cutStr($string, $length, $dot = '...')
  */
 function convertEncoding($string, $fromEncoding, $toEncoding = 'utf-8')
 {
-    $fromEncoding = strtolower(str_replace('utf8', 'utf-8', $fromEncoding));
-    $toEncoding = strtolower(str_replace('utf8', 'utf-8', $toEncoding));
+    $from = str_ireplace('utf8', 'UTF-8', trim((string) $fromEncoding));
+    $to = str_ireplace('utf8', 'UTF-8', trim((string) $toEncoding));
     if (function_exists('mb_convert_encoding')) {
-        /* Remove like utf-8//TRANSLIT. */
-        $position = strpos($toEncoding, '//');
-        if ($position !== false) {
-            $toEncoding = substr($toEncoding, 0, $position);
+        $to = explode('//', $to, 2)[0];
+        if ($from === '' || strcasecmp($from, 'auto') === 0) {
+            $from = mb_detect_encoding($string, ['UTF-8', 'GBK', 'BIG5'], true);
         }
-
-        /* Check string encoding. */
-        $encodings = array_merge(['GB2312', 'GBK', 'BIG5'], mb_list_encodings());
-        $encoding = mb_detect_encoding($string, $encodings, true);
-        if ($encoding === false) {
-            $encoding = $fromEncoding;
-        }
-        $encoding = strtolower($encoding);
-        if ($encoding == $toEncoding) {
+        if (!$from || strcasecmp($from, $to) === 0) {
             return $string;
         }
-
-        return mb_convert_encoding($string, $toEncoding, $encoding);
-    } elseif (function_exists('iconv')) {
-        if ($fromEncoding == $toEncoding) {
+        try {
+            $converted = @mb_convert_encoding($string, $to, $from);
+        } catch (ValueError $error) {
             return $string;
         }
-
-        $convertString = @iconv($fromEncoding, $toEncoding, $string);
-        /* iconv error then return original. */
-        if (!$convertString) {
-            return $string;
-        }
-
-        return $convertString;
+    } elseif (function_exists('iconv') && $from !== '' && strcasecmp($from, $to) !== 0) {
+        $converted = @iconv($from, $to, $string);
+    } else {
+        return $string;
     }
-
-    return $string;
+    return $converted === false ? $string : $converted;
 }
 
 /**
@@ -259,66 +219,46 @@ function ciAddslashes($string, $force = 1)
  */
 function ciGmdate($timestamp = "", $format = "Y-n-d H:i", $convert = 1, $timeoffset = null)
 {
-    if ($timeoffset === null) {
-        $timeoffset = isset($GLOBALS['timeoffset']) ? $GLOBALS['timeoffset'] : 0;
+    $now = time();
+    if ($timestamp === '' || $timestamp === null) {
+        $timestamp = $now;
     }
-    $timeoffset = $timeoffset ? $timeoffset : 8;
-    $todaytime = strtotime("today");
-    $timeformat = 'H:i';
-    $s = gmdate($format, $timestamp + $timeoffset * 3600);
+    $timeoffset = $timeoffset ?? ($GLOBALS['timeoffset'] ?? 8);
+    if (!is_numeric($timestamp) || !is_numeric($timeoffset)) {
+        return '';
+    }
+    $timestamp = (int) $timestamp;
+    $offset = (int) round($timeoffset * 3600);
+    $local = $timestamp + $offset;
     if (!$convert) {
-        return $s;
+        return gmdate($format, $local);
     }
-    $lang = [
-        0 => '前',
-        1 => '天',
-        2 => '前天',
-        3 => '昨天',
-        4 => '今天',
-        5 => '小时',
-        6 => '半',
-        7 => '分',
-        8 => '秒',
-        9 => '刚才',
-    ];
-    $timenow = time();
-    $time = $timenow - $timestamp;
-    $getdate = getdate();
-    $thisyr_timestamp = mktime(0, 0, 0, 1, 1, $getdate["year"]);
-    if ($time > ($timenow - $thisyr_timestamp)) {
-        $s = gmdate("Y-n-d H:i", $timestamp + $timeoffset * 3600);
+
+    $today = strtotime(gmdate('Y-m-d', $now + $offset) . ' UTC') - $offset;
+    $elapsed = $now - $timestamp;
+    if ($elapsed >= 0 && $timestamp >= $today) {
+        if ($elapsed > 10800) {
+            return '今天&nbsp;' . gmdate('H:i', $local);
+        }
+        if ($elapsed > 3600) {
+            return intdiv($elapsed, 3600) . '&nbsp;小时前';
+        }
+        if ($elapsed > 1800) {
+            return '半小时前';
+        }
+        if ($elapsed > 60) {
+            return intdiv($elapsed, 60) . '&nbsp;分前';
+        }
+        return $elapsed ? $elapsed . '&nbsp;秒前' : '刚才';
     }
-    if ($todaytime <= $timestamp) {
-        if (10800 < $time) {
-            return $lang[4] . "&nbsp;" . gmdate($timeformat, $timestamp + $timeoffset * 3600);
-        }
-        if (3600 < $time) {
-            return intval($time / 3600) . "&nbsp;" . $lang[5] . $lang[0];
-        }
-        if (1800 < $time) {
-            return $lang[6] . $lang[5] . $lang[0];
-        }
-        if (60 < $time) {
-            return intval($time / 60) . "&nbsp;" . $lang[7] . $lang[0];
-        }
-        if (0 < $time) {
-            return $time . "&nbsp;" . $lang[8] . $lang[0];
-        }
-        if ($time == 0) {
-            return $lang[9];
-        }
-        return $s;
+    if ($timestamp < $today && $timestamp >= $today - 2 * 86400) {
+        $day = $timestamp >= $today - 86400 ? '昨天' : '前天';
+        return $day . '&nbsp;' . gmdate('H:i', $local);
     }
-    if (0 <= ($days = intval(($todaytime - $timestamp) / 86400)) && $days < 2) {
-        if ($days == 0) {
-            return $lang[3] . "&nbsp;" . gmdate($timeformat, $timestamp + $timeoffset * 3600);
-        }
-        if ($days == 1) {
-            return $lang[2] . "&nbsp;" . gmdate($timeformat, $timestamp + $timeoffset * 3600);
-        }
-    } else {
-        return $s;
+    if (gmdate('Y', $local) < gmdate('Y', $now + $offset)) {
+        $format = 'Y-n-d H:i';
     }
+    return gmdate($format, $local);
 }
 
 /**
@@ -365,14 +305,20 @@ function downloadFile($file, $fileName = "")
  */
 function dayArrList($month, $format = 'Ymd')
 {
-    $time = strtotime($month . '10:10:10');
-    $j = date("t", $time);
-    $startTime = strtotime(date('Y-m-01', $time));
-    $dayArr = [];
-    for ($i = 0; $i < $j; $i++) {
-        $dayArr[] = date($format, $startTime + $i * 86400);
+    if (!preg_match('/^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?$/D', trim((string) $month), $parts)) {
+        return [];
     }
-    return $dayArr;
+    if (!checkdate((int) $parts[2], (int) ($parts[3] ?? 1), (int) $parts[1])) {
+        return [];
+    }
+    $day = new DateTimeImmutable(sprintf('%04d-%02d-01', $parts[1], $parts[2]));
+    $count = (int) $day->format('t');
+    $days = [];
+    for ($i = 0; $i < $count; $i++) {
+        $days[] = $day->format($format);
+        $day = $day->modify('+1 day');
+    }
+    return $days;
 }
 
 /**
@@ -392,24 +338,25 @@ function executeTime($sec = false)
         if (class_exists('\Yaf\Registry')) {
             $startTime = \Yaf\Registry::get("starttime") ?: 0;
         }
-        if (class_exists('Yaf_Registry')) {
+        if (!$startTime && class_exists('Yaf_Registry')) {
             $startTime = \Yaf_Registry::get("starttime") ?: 0;
         }
-        if (class_exists('Zend_Registry')) {
+        if (!$startTime && class_exists('Zend_Registry')) {
             $startTime = \Zend_Registry::isRegistered('starttime')  ?\Zend_Registry::get('starttime') : 0;
         }
     }
     if (!$startTime) {
         return false;
     }
-    $stime = explode(' ', $startTime);
-    $etime = explode(' ', microtime());
-    $exeTime = number_format(($etime[1] + $etime[0] - $stime[1] - $stime[0]), 6);
-    if ($sec) {
-        return $exeTime;
-    } else {
-        return $exeTime * 1000;
+    if (!is_numeric($startTime)) {
+        $parts = is_string($startTime) ? preg_split('/\s+/', trim($startTime)) : [];
+        if (count($parts) !== 2 || !is_numeric($parts[0]) || !is_numeric($parts[1])) {
+            return false;
+        }
+        $startTime = (float) $parts[0] + (float) $parts[1];
     }
+    $elapsed = microtime(true) - (float) $startTime;
+    return $sec ? number_format($elapsed, 6, '.', '') : round($elapsed * 1000, 3);
 }
 
 /**
@@ -457,12 +404,7 @@ function getFileExt($fileName)
  */
 function getOrderId($type = 'YEE', $seqId = 0, $lenth = 18)
 {
-    list($usec, $sec) = explode(" ", microtime());
-    $orderId = date('ymdHis', $sec);
-    $orderId .= substr($seqId * rand(11, 55), 0, 5);
-    $orderId .= ceil($usec * pow(10, 7));
-    $orderId = substr($orderId, 0, $lenth);
-    return $type . $orderId;
+    return \PhpHelpers\OrderSequence::orderNumber($type, $seqId, $lenth);
 }
 
 /**
@@ -476,14 +418,10 @@ function getOrderId($type = 'YEE', $seqId = 0, $lenth = 18)
  * @author     assad
  * @since      2021-04-16T10:55
  */
-function genOrderId($datacenterId = 1)
+function genOrderId($datacenterId = 1, $workerId = null)
 {
-    if (!class_exists('\Godruoyi\Snowflake\Snowflake')) {
-        throw new Exception('Snowflake不存在');
-    }
-    $snowflake = new \Godruoyi\Snowflake\Snowflake($datacenterId);
-    $snowflake->setStartTimeStamp(strtotime('2021-04-16') * 1000);
-    return $snowflake->id();
+    $workerId = $workerId ?? (defined('PHPHELPERS_WORKER_ID') ? PHPHELPERS_WORKER_ID : 0);
+    return \PhpHelpers\OrderSequence::snowflake($datacenterId, $workerId);
 }
 
 /**
@@ -521,20 +459,31 @@ function getJsonData($data = [], $tip = 'success', $code = 0)
  */
 function getRandPro($proArr)
 {
-    $result = '';
-    //概率数组的总概率精度
-    $proSum = array_sum($proArr);
-    //概率数组循环
-    foreach ($proArr as $key => $proCur) {
-        $randNum = mt_rand(1, $proSum);
-        if ($randNum <= $proCur) {
-            $result = $key;
-            break;
-        } else {
-            $proSum -= $proCur;
+    if (!is_array($proArr)) {
+        return '';
+    }
+    $total = 0;
+    foreach ($proArr as $key => $weight) {
+        if (is_string($weight) && preg_match('/^[0-9]+$/D', $weight)) {
+            $weight = ltrim($weight, '0');
+            $weight = $weight === '' ? 0 : filter_var($weight, FILTER_VALIDATE_INT);
+        }
+        if (!is_int($weight) || $weight < 0 || $weight > PHP_INT_MAX - $total) {
+            return '';
+        }
+        $proArr[$key] = $weight;
+        $total += $weight;
+    }
+    if ($total > 0) {
+        $draw = mt_rand(1, $total);
+        foreach ($proArr as $key => $weight) {
+            $draw -= $weight;
+            if ($draw <= 0) {
+                return $key;
+            }
         }
     }
-    return $result;
+    return '';
 }
 
 /**
@@ -556,64 +505,97 @@ function getRandPro($proArr)
  */
 function dfopen($url, $limit = 0, $post = '', $cookie = '', $ip = '', $timeout = 3, $block = 0)
 {
-    $return = '';
-    $matches = parse_url($url);
-    $host = $matches['host'];
-    $path = $matches['path'] ? $matches['path'] . ($matches['query'] ? '?' . $matches['query'] : '') : '/';
-    $port = !empty($matches['port']) ? $matches['port'] : 80;
-    $userAgent = isset($_SERVER['HTTP_USER_AGENT']) ? str_replace(["\r", "\n"], '', $_SERVER['HTTP_USER_AGENT']) : 'Mozilla/5.0';
-
-    if ($post) {
-        $out = "POST $path HTTP/1.0\r\n";
-        $out .= "Accept: */*\r\n";
-        //$out .= "Referer: $boardurl\r\n";
-        $out .= "Accept-Language: zh-cn\r\n";
-        $out .= "Content-Type: application/x-www-form-urlencoded\r\n";
-        $out .= "User-Agent: $userAgent\r\n";
-        $out .= "Host: $host\r\n";
-        $out .= 'Content-Length: ' . strlen($post) . "\r\n";
-        $out .= "Connection: Close\r\n";
-        $out .= "Cache-Control: no-cache\r\n";
-        $out .= "Cookie: $cookie\r\n\r\n";
-        $out .= $post;
-    } else {
-        $out = "GET $path HTTP/1.0\r\n";
-        $out .= "Accept: */*\r\n";
-        //$out .= "Referer: $boardurl\r\n";
-        $out .= "Accept-Language: zh-cn\r\n";
-        $out .= "User-Agent: $userAgent\r\n";
-        $out .= "Host: $host\r\n";
-        $out .= "Connection: Close\r\n";
-        $out .= "Cookie: $cookie\r\n\r\n";
-    }
-    $fp = @fsockopen(($ip ? $ip : $host), $port, $errno, $errstr, $timeout);
-    if (!$fp) {
+    if (!is_string($url) || preg_match('/[\x00-\x20\x7f]/', $url)) {
         return '';
-    } else {
-        stream_set_blocking($fp, $block);
-        stream_set_timeout($fp, $timeout);
-        @fwrite($fp, $out);
-        $status = stream_get_meta_data($fp);
-        if (!$status['timed_out']) {
-            while (!feof($fp)) {
-                if (($header = @fgets($fp)) && ($header == "\r\n" || $header == "\n")) {
-                    break;
-                }
-            }
+    }
+    $parts = parse_url($url);
+    $scheme = strtolower($parts['scheme'] ?? '');
+    if (empty($parts['host']) || !in_array($scheme, ['http', 'https'], true)) {
+        return '';
+    }
+    $limit = (int) $limit;
+    $timeout = (float) $timeout;
+    if ($limit < 0 || !is_finite($timeout) || $timeout <= 0 || ($ip !== '' && !filter_var($ip, FILTER_VALIDATE_IP))) {
+        return '';
+    }
+    $tls = $scheme === 'https';
+    $host = $parts['host'];
+    $port = $parts['port'] ?? ($tls ? 443 : 80);
+    $address = $ip === '' ? $host : (strpos($ip, ':') === false ? $ip : '[' . $ip . ']');
+    $target = ($parts['path'] ?? '/') . (isset($parts['query']) ? '?' . $parts['query'] : '');
+    $userAgent = str_replace(["\r", "\n"], '', $_SERVER['HTTP_USER_AGENT'] ?? 'Mozilla/5.0');
+    $cookie = str_replace(["\r", "\n"], '', $cookie);
+    $authority = isset($parts['port']) ? $host . ':' . $port : $host;
+    $isPost = $post !== '' && $post !== null && $post !== false;
+    $request = ($isPost ? 'POST ' : 'GET ') . $target . " HTTP/1.0\r\n"
+        . "Host: $authority\r\nAccept: */*\r\nAccept-Language: zh-cn\r\n"
+        . "User-Agent: $userAgent\r\nCookie: $cookie\r\nConnection: close\r\n";
+    if ($isPost) {
+        $request .= "Content-Type: application/x-www-form-urlencoded\r\nContent-Length: " . strlen($post) . "\r\n";
+    }
+    $request .= "\r\n" . ($isPost ? $post : '');
 
-            $stop = false;
-            while (!feof($fp) && !$stop) {
-                $data = fread($fp, ($limit == 0 || $limit > 8192 ? 8192 : $limit));
-                $return .= $data;
-                if ($limit) {
-                    $limit -= strlen($data);
-                    $stop = $limit <= 0;
-                }
+    $deadline = microtime(true) + $timeout;
+    $context = stream_context_create(['ssl' => ['peer_name' => trim($host, '[]'), 'verify_peer' => true, 'verify_peer_name' => true]]);
+    $socket = @stream_socket_client(($tls ? 'tls://' : 'tcp://') . $address . ':' . $port,
+        $errno, $message, $timeout, STREAM_CLIENT_CONNECT, $context);
+    if (!$socket) {
+        return '';
+    }
+
+    $body = '';
+    try {
+        for ($sent = 0; $sent < strlen($request); $sent += $written) {
+            $left = $deadline - microtime(true);
+            if ($left <= 0) {
+                return '';
+            }
+            stream_set_timeout($socket, (int) $left, (int) (($left - (int) $left) * 1000000));
+            $written = @fwrite($socket, substr($request, $sent));
+            if (!$written) {
+                return '';
             }
         }
-        @fclose($fp);
-        return $return;
+        stream_set_blocking($socket, (bool) $block);
+        $headers = '';
+        while (!feof($socket) && ($left = $deadline - microtime(true)) > 0) {
+            $seconds = (int) $left;
+            $micros = (int) (($left - $seconds) * 1000000);
+            if ($block) {
+                stream_set_timeout($socket, $seconds, $micros);
+            }
+            $data = @fread($socket, $headers === null && $limit ? min(8192, $limit - strlen($body)) : 8192);
+            if ($data === false || $data === '') {
+                if ($block || feof($socket)) {
+                    break;
+                }
+                $read = [$socket];
+                $write = $except = null;
+                if (!@stream_select($read, $write, $except, $seconds, $micros)) {
+                    break;
+                }
+                continue;
+            }
+            if ($headers !== null) {
+                $headers .= $data;
+                if (!preg_match('/\r?\n\r?\n/', $headers, $separator, PREG_OFFSET_CAPTURE)) {
+                    if (strlen($headers) > 65536) {
+                        return '';
+                    }
+                    continue;
+                }
+                $data = substr($headers, $separator[0][1] + strlen($separator[0][0]));
+                $headers = null;
+            }
+            $body .= $data;
+            if ($limit && strlen($body) >= $limit) {
+                return substr($body, 0, $limit);
+            }
+        }
+    } finally {
+        fclose($socket);
     }
+    return $body;
 }
 
 /**
@@ -831,38 +813,28 @@ function getTimeRange($range = 1)
  * @author     assad
  * @since      2019-09-19T10:34
  */
-function getRangeTimestamp($type)
+function getRangeTimestamp($type, $timestamp = null)
 {
+    $now = $timestamp ?? time();
+    $today = strtotime('today', $now);
     switch ($type) {
-        case 1: //今日
-            $startTime = mktime(0, 0, 0, date('m'), date('d'), date('Y'));
-            $endTime = mktime(0, 0, 0, date('m'), date('d') + 1, date('Y')) - 1;
-            break;
-        case 2: //昨日
-            $startTime = mktime(0, 0, 0, date('m'), date('d') - 1, date('Y'));
-            $endTime = mktime(0, 0, 0, date('m'), date('d'), date('Y')) - 1;
-            break;
-        case 3: //本周
-            $startTime = mktime(0, 0, 0, date('m'), date('d') - date('w') + 1, date('Y'));
-            $endTime = time();
-            break;
-        case 4: //上周
-            $startTime = mktime(0, 0, 0, date('m'), date('d') - date('w') + 1 - 7, date('Y'));
-            $endTime = mktime(23, 59, 59, date('m'), date('d') - date('w') + 7 - 7, date('Y'));
-            break;
-        case 5: //本月
-            $startTime = mktime(0, 0, 0, date('m'), 1, date('Y'));
-            $endTime = mktime(23, 59, 59, date('m'), date('t'), date('Y'));
-            break;
-        case 6: //上月
-            $startTime = strtotime(date('Y-m-01 00:00:00', strtotime('-1 month')));
-            $endTime = strtotime(date("Y-m-d 23:59:59", strtotime(-date('d') . 'day')));
-            break;
+        case 1: // 今日
+            return [$today, strtotime('+1 day', $today) - 1];
+        case 2: // 昨日
+            return [strtotime('-1 day', $today), $today - 1];
+        case 3: // 本周至今
+            return [strtotime('monday this week', $today), $now];
+        case 4: // 上周
+            $monday = strtotime('monday this week', $today);
+            return [strtotime('-1 week', $monday), $monday - 1];
+        case 5: // 本月
+            return [strtotime('first day of this month', $today), strtotime('first day of next month', $today) - 1];
+        case 6: // 上月
+            $first = strtotime('first day of this month', $today);
+            return [strtotime('-1 month', $first), $first - 1];
         default:
-            // code...
-            break;
+            return [null, null];
     }
-    return [$startTime, $endTime];
 }
 
 /**
@@ -1038,32 +1010,32 @@ function isUtf8($string)
  *
  * @return     string  IP地址
  */
-function ip()
+function ip(array $trustedProxies = [])
 {
-    $ip = '';
-
-    if (getenv('HTTP_CLIENT_IP') && strcasecmp(getenv('HTTP_CLIENT_IP'), 'unknown')) {
-        $ip = getenv('HTTP_CLIENT_IP');
-    } elseif (getenv('HTTP_X_FORWARDED_FOR') && strcasecmp(getenv('HTTP_X_FORWARDED_FOR'), 'unknown')) {
-        $ip = getenv('HTTP_X_FORWARDED_FOR');
-    } elseif (getenv('REMOTE_ADDR') && strcasecmp(getenv('REMOTE_ADDR'), 'unknown')) {
-        $ip = getenv('REMOTE_ADDR');
-    } elseif (isset($_SERVER['REMOTE_ADDR']) && $_SERVER['REMOTE_ADDR'] && strcasecmp($_SERVER['REMOTE_ADDR'], 'unknown')) {
-        $ip = $_SERVER['REMOTE_ADDR'];
+    $peer = $_SERVER['REMOTE_ADDR'] ?? getenv('REMOTE_ADDR');
+    if (!filter_var($peer, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+        return '';
     }
-
-    if (strpos($ip, ',') !== false) {
-        $ipList = explode(',', $ip);
-        foreach ($ipList as $candidate) {
-            $candidate = trim($candidate);
-            if ($candidate !== '' && validIp($candidate)) {
-                return $candidate;
-            }
+    if (!$trustedProxies && defined('PHPHELPERS_TRUSTED_PROXIES')) {
+        $trustedProxies = PHPHELPERS_TRUSTED_PROXIES;
+    }
+    if (!in_array($peer, $trustedProxies, true)) {
+        return $peer;
+    }
+    $forwarded = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? getenv('HTTP_X_FORWARDED_FOR');
+    if (!$forwarded) {
+        return $peer;
+    }
+    foreach (array_reverse(explode(',', $forwarded)) as $hop) {
+        $hop = trim($hop);
+        if (!filter_var($hop, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            return $peer;
         }
-        $ip = trim($ipList[0]);
+        if (!in_array($hop, $trustedProxies, true)) {
+            return $hop;
+        }
     }
-
-    return preg_match('/[\d\.]{7,15}/', $ip, $matches) ? $matches[0] : '';
+    return $peer;
 }
 
 /**
@@ -1139,7 +1111,7 @@ function rMkdir($pathname, $mode = 0777)
         return false;
     }
 
-    return is_dir($pathname) || @mkdir($pathname, $mode);
+    return @mkdir($pathname, $mode) || is_dir($pathname);
 }
 
 /**
@@ -1311,7 +1283,14 @@ function RC4($string, $operation = 'DECODE', $key = 'ci', $expiry = 0)
     $cryptkey = $keya . md5($keya . $keyc);
     $key_length = strlen($cryptkey);
 
-    $string = $operation == 'DECODE' ? base64_decode(substr($string, $ckey_length)) : sprintf('%010d', $expiry ? $expiry + time() : 0) . substr(md5($string . $keyb), 0, 16) . $string;
+    if ($operation === 'DECODE') {
+        $string = base64_decode(substr($string, $ckey_length), true);
+        if ($string === false || strlen($string) < 26) {
+            return '';
+        }
+    } else {
+        $string = sprintf('%010d', $expiry ? $expiry + time() : 0) . substr(md5($string . $keyb), 0, 16) . $string;
+    }
     $string_length = strlen($string);
 
     $result = '';
@@ -1338,15 +1317,16 @@ function RC4($string, $operation = 'DECODE', $key = 'ci', $expiry = 0)
         $result .= chr(ord($string[$i]) ^ ($box[($box[$a] + $box[$j]) % 256]));
     }
 
-    if ($operation == 'DECODE') {
-        if ((substr($result, 0, 10) == 0 || substr($result, 0, 10) - time() > 0) && substr($result, 10, 16) == substr(md5(substr($result, 26) . $keyb), 0, 16)) {
-            return substr($result, 26);
-        } else {
+    if ($operation === 'DECODE') {
+        $expires = substr($result, 0, 10);
+        if (strspn($expires, '0123456789') !== 10 || ($expires !== '0000000000' && (int) $expires <= time())) {
             return '';
         }
-    } else {
-        return $keyc . str_replace('=', '', base64_encode($result));
+        $plain = substr($result, 26);
+        $expected = substr(md5($plain . $keyb), 0, 16);
+        return hash_equals($expected, substr($result, 10, 16)) ? $plain : '';
     }
+    return $keyc . rtrim(base64_encode($result), '=');
 }
 
 /**
@@ -1384,8 +1364,33 @@ function rumcmd($cmd)
  */
 function randomDecimals($min, $max, $decimals = 2)
 {
-    $scale = pow(10, $decimals);
-    return mt_rand($min * $scale, $max * $scale) / $scale;
+    $precision = filter_var($decimals, FILTER_VALIDATE_INT);
+    if ($precision === false || $precision < 0 || $precision >= strlen((string) PHP_INT_MAX)
+        || !is_numeric($min) || !is_numeric($max) || $min > $max) {
+        throw new InvalidArgumentException('无效的小数范围或精度');
+    }
+    $scale = 10 ** $precision;
+    $bounds = [];
+    foreach ([$min, $max] as $index => $value) {
+        $scaled = $value * $scale;
+        if (is_int($scaled)) {
+            $bounds[] = $scaled;
+            continue;
+        }
+        if (!is_finite($scaled) || $scaled < PHP_INT_MIN || $scaled >= (float) PHP_INT_MAX) {
+            throw new InvalidArgumentException('小数范围超过整数精度');
+        }
+        $nearest = round($scaled);
+        if ($nearest / $scale == $value) {
+            $bounds[] = (int) $nearest;
+        } else {
+            $bounds[] = (int) ($index === 0 ? ceil($scaled) : floor($scaled));
+        }
+    }
+    if ($bounds[0] > $bounds[1]) {
+        throw new InvalidArgumentException('区间内没有符合精度的数值');
+    }
+    return mt_rand($bounds[0], $bounds[1]) / $scale;
 }
 
 /**
@@ -1647,11 +1652,11 @@ function urlencode4js($string)
  */
 function validIp($ip)
 {
-    if (strtolower($ip) === 'unknown') {
+    if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
         return false;
     }
     $ip = ip2long($ip);
-    if ($ip !== false && $ip !== -1) {
+    if ($ip !== false) {
         $ip = (float) sprintf('%u', $ip);
         if ($ip >= 0 && $ip <= 50331647) {
             return false;
@@ -1720,35 +1725,33 @@ function writeLog($fileName, $data, $method = 'wb+', $ifLock = 1, $check = 1, $c
  */
 function writeFile($filePath, $data, $method = 'wb+', $ifLock = 1, $chmod = 1)
 {
-    if (is_array($data) || is_object($data)) {
-        $data = print_r($data, true);
-    } else {
-        $data = (string) $data;
-    }
-
-    $handle = @fopen($filePath, $method);
-    if ($handle == false) {
+    $data = is_array($data) || is_object($data) ? print_r($data, true) : (string) $data;
+    $truncate = $ifLock && isset($method[0]) && $method[0] === 'w';
+    $mode = $truncate ? 'c' . substr($method, 1) : $method;
+    $handle = @fopen($filePath, $mode);
+    if (!$handle) {
         return false;
     }
-
-    $locked = false;
-    if ($ifLock) {
-        $locked = flock($handle, LOCK_EX);
-    }
-    if (fwrite($handle, $data) === false) {
-        if ($locked) {
-            flock($handle, LOCK_UN);
+    try {
+        if ($ifLock && !flock($handle, LOCK_EX)) {
+            return false;
         }
+        if ($truncate && !ftruncate($handle, 0)) {
+            return false;
+        }
+        $length = strlen($data);
+        for ($offset = 0; $offset < $length; $offset += $written) {
+            $written = fwrite($handle, substr($data, $offset, 65536));
+            if (!$written) {
+                return false;
+            }
+        }
+        if (!fflush($handle)) {
+            return false;
+        }
+    } finally {
         fclose($handle);
-        return false;
     }
-    if ($method == "wb+") {
-        ftruncate($handle, strlen($data));
-    }
-    if ($locked) {
-        flock($handle, LOCK_UN);
-    }
-    fclose($handle);
     if ($chmod) {
         @chmod($filePath, 0777);
     }

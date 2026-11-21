@@ -1,0 +1,37 @@
+name: PHP compatibility
+
+on: [push, pull_request]
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['7.4', '8.0', '8.3', '8.4', '8.5']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring, openssl
+          coverage: none
+      - run: composer validate --strict
+      - run: composer install --no-interaction
+      - run: php tests/regression.php
+      - name: Verify HTTPS hostname with an IP override
+        shell: bash
+        run: |
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=helper.test' \
+            -addext 'subjectAltName=DNS:helper.test' -keyout "$RUNNER_TEMP/helper.key" -out "$RUNNER_TEMP/helper.crt"
+          openssl s_server -accept 127.0.0.1:18443 -cert "$RUNNER_TEMP/helper.crt" \
+            -key "$RUNNER_TEMP/helper.key" -www -quiet > "$RUNNER_TEMP/helper-server.log" 2>&1 &
+          server=$!
+          trap 'kill "$server" || true' EXIT
+          curl --retry 5 --retry-connrefused --retry-delay 1 --silent --show-error --fail \
+            --noproxy '*' --resolve helper.test:18443:127.0.0.1 --cacert "$RUNNER_TEMP/helper.crt" \
+            https://helper.test:18443/ > /dev/null
+          php -d openssl.cafile="$RUNNER_TEMP/helper.crt" -r '
+            require "vendor/autoload.php";
+            $ok = dfopen("https://helper.test:18443/", 64, "", "", "127.0.0.1");
+            $wrong = dfopen("https://other.test:18443/", 64, "", "", "127.0.0.1");
+            exit(strlen($ok) === 64 && $wrong === "" ? 0 : 1);'
