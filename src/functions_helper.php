@@ -420,7 +420,7 @@ function getOrderId($type = 'YEE', $seqId = 0, $lenth = 18)
  */
 function genOrderId($datacenterId = 1, $workerId = null)
 {
-    $workerId = $workerId ?? (defined('PHPHELPERS_WORKER_ID') ? PHPHELPERS_WORKER_ID : 0);
+    $workerId = $workerId ?? (defined('PHPHELPERS_WORKER_ID')  ?PHPHELPERS_WORKER_ID : 0);
     return \PhpHelpers\OrderSequence::snowflake($datacenterId, $workerId);
 }
 
@@ -1330,23 +1330,65 @@ function RC4($string, $operation = 'DECODE', $key = 'ci', $expiry = 0)
 }
 
 /**
- * 无需等待执行一条Linux命令
+ * 在后台执行 shell 命令，默认丢弃标准输出和错误输出。
  *
  * @param      string  $cmd    要执行的命令
+ * @throws InvalidArgumentException 命令无效
+ * @throws RuntimeException 无法启动后台 shell
  */
-function rumcmdnowait($cmd)
+function runCmdNoWait($cmd)
 {
-    pclose(popen($cmd, 'r'));
+    if (!is_string($cmd) || trim($cmd) === '' || strpos($cmd, "\0") !== false) {
+        throw new InvalidArgumentException('命令必须是非空且不含 NUL 字节的字符串');
+    }
+
+    if (PHP_OS_FAMILY === 'Windows') {
+        if (!function_exists('proc_open')) {
+            throw new RuntimeException('后台执行命令需要启用 proc_open()');
+        }
+        $shell = getenv('SystemRoot') . '\\System32\\cmd.exe';
+        $command = '"' . $shell . '" /d /s /c "' . $cmd . '"';
+        $streams = [0 => ['file', 'NUL', 'r'], 1 => ['file', 'NUL', 'w'], 2 => ['file', 'NUL', 'w']];
+        $process = proc_open($command, $streams, $pipes, null, null, ['bypass_shell' => true]);
+        if ($process === false) {
+            throw new RuntimeException('无法启动后台 shell');
+        }
+        // 让 PHP 在返回时释放 Windows 进程句柄。显式 proc_close() 会等待任务结束。
+        return;
+    }
+
+    if (!function_exists('popen') || !function_exists('pclose')) {
+        throw new RuntimeException('后台执行命令需要启用 popen() 和 pclose()');
+    }
+    // 整组命令在后台运行；pclose() 只等待提交任务的 shell。
+    $launcher = popen("(\n" . $cmd . "\n) </dev/null >/dev/null 2>&1 &", 'r');
+    if ($launcher === false || pclose($launcher) !== 0) {
+        throw new RuntimeException('无法启动后台 shell');
+    }
 }
 
 /**
- * 执行一条Linux命令
+ * 同步执行 shell 命令并直接输出其标准输出。
  *
  * @param      string  $cmd    要执行的命令
+ * @param      int|null  $exitCode    接收命令的退出码
  */
-function rumcmd($cmd)
+function runCmd($cmd, &$exitCode = null)
 {
-    passthru($cmd);
+    $exitCode = null;
+    passthru($cmd, $exitCode);
+}
+
+/** @deprecated 请使用 runCmdNoWait()。 */
+function rumcmdnowait($cmd)
+{
+    runCmdNoWait($cmd);
+}
+
+/** @deprecated 请使用 runcmd()。 */
+function rumcmd($cmd, &$exitCode = null)
+{
+    runCmd($cmd, $exitCode);
 }
 
 /**

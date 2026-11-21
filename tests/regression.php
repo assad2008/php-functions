@@ -56,6 +56,12 @@ if (isset($argv[1]) && $argv[1] !== '--offline') {
             echo getOrderId(), ' ', genOrderId(), "\n";
             check(writeFile($dir . '/append', $argv[3] . '-' . $i . "\n", 'ab', 1, 0), '追加写失败');
         }
+    } elseif ($argv[1] === 'background') {
+        $id = $argv[3];
+        waitForFile($dir . '/release-' . $id);
+        fwrite(STDOUT, "stdout\n");
+        fwrite(STDERR, "stderr\n");
+        file_put_contents($dir . '/done-' . $id, 'done');
     } elseif ($argv[1] === 'overwrite') {
         file_put_contents($dir . '/writer-ready', '1');
         check(writeFile($dir . '/overwrite', 'new', 'wb+', 1, 0), '覆盖写失败');
@@ -96,6 +102,31 @@ define('PHPHELPERS_ID_DIR', $dir);
 $network = !in_array('--offline', $argv, true);
 $children = [];
 try {
+    foreach (['runcmd' => 0, 'rumcmd' => 7] as $run => $expectedCode) {
+        $command = escapeshellarg(PHP_BINARY) . ' -r ' . escapeshellarg('echo 42; exit(' . $expectedCode . ');');
+        ob_start();
+        $result = $run($command, $exitCode);
+        $output = ob_get_clean();
+        check($result === null && $output === '42' && $exitCode === $expectedCode, $run . ' 输出和退出码');
+    }
+    $originalDir = getcwd();
+    chdir($dir);
+    try {
+        foreach (['runcmdnowait', 'rumcmdnowait'] as $run) {
+            $command = implode(' ', array_map('escapeshellarg', [PHP_BINARY, __FILE__, 'background', '.', $run]));
+            if ($run === 'rumcmdnowait') {
+                $command .= ' > "background output.log" 2>&1';
+            }
+            check($run($command) === null, $run . ' 返回值');
+            // 子进程必须等本次调用返回后才能完成，避免依赖固定的耗时阈值。
+            file_put_contents('release-' . $run, 'go');
+            check(waitForFile('done-' . $run) === 'done', $run . ' 后台执行');
+        }
+        check(file('background output.log', FILE_IGNORE_NEW_LINES) === ['stdout', 'stderr'], '后台命令保留显式输出重定向');
+    } finally {
+        chdir($originalDir);
+    }
+
     check(ciGmdate(0, 'H:i', 0, 0) === '00:00', 'UTC 与时间戳 0');
     check(in_array(ciGmdate(), ['刚才', '1&nbsp;秒前'], true), '默认时间');
     check(RC4('d351XMeuBe4eVfrJXulgyULpoKD9YggBw9H4+QeQRUZM6ld0RCq2Z1oU28E', 'DECODE', 'test-key') === 'legacy-order-42', '旧密文');

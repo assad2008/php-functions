@@ -170,8 +170,17 @@ $clientIp = ip();
 | `writeLog($fileName, $data, $method = 'wb+', $ifLock = 1, $check = 1, $chmod = 1)` | 按需创建父目录并调用 `writeFile()`。默认覆盖，持续写日志时使用 `'ab'`。 |
 | `sendLog($string, $saveDir = 'sendlog', $t = 'day')` | 追加带时间的日志，默认按天分文件。日志根目录取自 `DATA_PATH`、`LOG_PATH` 或 `FCPATH`，均未定义时返回 `false`。 |
 | `downloadFile($file, $fileName = "")` | 发送下载响应并结束脚本。可指定浏览器显示的文件名。 |
-| `rumcmd($cmd)` | 通过 `passthru()` 执行命令并输出结果。 |
-| `rumcmdnowait($cmd)` | 通过 `popen()` 启动命令并调用 `pclose()`。需要后台执行时，调用方须按运行平台处理命令。 |
+| `runcmd($cmd, &$exitCode = null)` | 同步执行并直接输出标准输出，返回 `null`。按需传入第二个变量接收退出码。 |
+| `runcmdnowait($cmd)` | 在 Linux、macOS 和 Windows 上提交后台命令后返回 `null`。默认丢弃标准输出和错误输出，可在命令中重定向到日志。 |
+
+旧名称 `rumcmd()` 和 `rumcmdnowait()` 仍可调用，参数与对应的新名称相同。
+
+```php
+runcmd('php --version', $exitCode);
+runcmdnowait('php worker.php >> worker.log 2>&1');
+```
+
+后台函数正常返回表示 shell 已接受任务。任务最终是否成功，应查看任务状态或日志。Windows 需要启用 `proc_open()`，Linux 和 macOS 需要启用 `popen()`、`pclose()`。命令为空或含 NUL 字节时抛出 `InvalidArgumentException`，无法启动后台 shell 时抛出 `RuntimeException`。
 
 ## 运行测试
 
